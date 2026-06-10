@@ -92,7 +92,7 @@
           <td>
             <label class="check"><input form="{{ form_id }}" type="checkbox" name="item_enabled" {% if item.enabled %}checked{% endif %}> предмет</label>
             <label class="check"><input form="{{ form_id }}" type="checkbox" name="rule_enabled" {% if item.rule_enabled is none or item.rule_enabled %}checked{% endif %}> правило</label>
-            <input form="{{ form_id }}" name="priority" value="0" placeholder="priority">
+            <input form="{{ form_id }}" name="priority" value="{{ item.priority or 0 }}" placeholder="priority">
           </td>
           <td class="rule-grid">
             <input form="{{ form_id }}" name="custom_roi_percent" value="{{ item.custom_roi_percent or '' }}" placeholder="ROI %, глоб. {{ settings.default_roi_percent }}">
@@ -102,6 +102,8 @@
             <input form="{{ form_id }}" name="min_roi_percent" value="{{ item.min_roi_percent or '' }}" placeholder="Мин. ROI">
             <input form="{{ form_id }}" name="float_min" value="{{ item.float_min or '' }}" placeholder="Float min">
             <input form="{{ form_id }}" name="float_max" value="{{ item.float_max or '' }}" placeholder="Float max">
+            <input form="{{ form_id }}" name="target_float_min" value="{{ item.target_float_min or '' }}" placeholder="Target float min">
+            <input form="{{ form_id }}" name="target_float_max" value="{{ item.target_float_max or '' }}" placeholder="Target float max">
             <input form="{{ form_id }}" name="pattern_ranges" value="{{ item.pattern_ranges or '' }}" placeholder="Pattern 1-5; 10">
           </td>
           <td><label class="check"><input form="{{ form_id }}" type="checkbox" name="telegram_alert_enabled" {% if item.telegram_alert_enabled is none or item.telegram_alert_enabled %}checked{% endif %}> алерт</label></td>

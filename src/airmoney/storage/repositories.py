@@ -199,20 +199,23 @@ class Repository:
                        r.min_roi_percent,
                        r.float_min,
                        r.float_max,
+                       r.target_float_min,
+                       r.target_float_max,
                        r.pattern_ranges,
+                       r.priority,
                        r.telegram_alert_enabled,
                        (
-                           SELECT ml.buy_price_rub
+                           SELECT MIN(ml.buy_price_rub)
                            FROM market_listings ml
                            WHERE ml.item_definition_id = i.id
-                           ORDER BY ml.last_seen_at DESC
-                           LIMIT 1
+                             AND ml.is_active = 1
                        ) AS current_price_rub,
                        (
                            SELECT ml.currency_source
                            FROM market_listings ml
                            WHERE ml.item_definition_id = i.id
-                           ORDER BY ml.last_seen_at DESC
+                             AND ml.is_active = 1
+                           ORDER BY ml.buy_price_rub ASC
                            LIMIT 1
                        ) AS currency_source
                 FROM items i
@@ -663,6 +666,36 @@ class Repository:
                 LIMIT ?
                 """,
                 params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+    def rule_stats(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    r.id AS rule_id,
+                    r.item_definition_id,
+                    i.display_name,
+                    i.market_hash_name,
+                    COUNT(DISTINCT ml.id) AS listings_found,
+                    COUNT(DISTINCT c.id) AS candidates_created,
+                    SUM(CASE WHEN c.status = 'opened' THEN 1 ELSE 0 END) AS opened_count,
+                    SUM(CASE WHEN c.status = 'bought_manually' THEN 1 ELSE 0 END) AS bought_count,
+                    SUM(CASE WHEN c.status = 'skipped' THEN 1 ELSE 0 END) AS skipped_count,
+                    SUM(CASE WHEN c.status = 'expired' THEN 1 ELSE 0 END) AS expired_count,
+                    AVG(c.estimated_roi_percent) AS avg_roi_percent,
+                    AVG(c.estimated_profit_rub) AS avg_profit_rub
+                FROM sniping_rules r
+                JOIN items i ON i.id = r.item_definition_id
+                LEFT JOIN market_listings ml ON ml.rule_id = r.id
+                LEFT JOIN candidates c ON c.rule_id = r.id
+                GROUP BY r.id
+                ORDER BY candidates_created DESC, listings_found DESC, r.priority DESC, r.id
+                LIMIT ?
+                """,
+                (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
 

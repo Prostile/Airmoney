@@ -33,7 +33,12 @@ def calculate_profit(
     if target_resale_price_rub is not None:
         target_resale_price = float(target_resale_price_rub)
     else:
-        target_resale_price = float(buy_price_rub) * (1 + float(roi_percent) / 100)
+        desired_roi = float(roi_percent)
+        net_target = float(buy_price_rub) * (1 + desired_roi / 100)
+        fee_multiplier = 1 - float(market_fee_percent) / 100
+        if fee_multiplier <= 0:
+            raise ValueError("Комиссия площадки слишком велика.")
+        target_resale_price = net_target / fee_multiplier
 
     net_resale_price = target_resale_price * (1 - float(market_fee_percent) / 100)
     profit = net_resale_price - float(buy_price_rub)

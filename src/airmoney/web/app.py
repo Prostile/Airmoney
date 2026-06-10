@@ -388,6 +388,8 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 min_roi_percent=_optional_float(form, "min_roi_percent"),
                 float_min=_optional_float(form, "float_min"),
                 float_max=_optional_float(form, "float_max"),
+                target_float_min=_optional_float(form, "target_float_min"),
+                target_float_max=_optional_float(form, "target_float_max"),
                 pattern_ranges=str(form.get("pattern_ranges", "") or ""),
                 priority=_int(form, "priority", 0),
                 telegram_alert_enabled=_checkbox(form, "telegram_alert_enabled"),
@@ -532,6 +534,20 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 "request": request,
                 "active": "candidates",
                 "candidates": repository.list_candidates(limit=100000),
+            },
+        )
+
+
+    @app.get("/rule-stats", response_class=HTMLResponse)
+    def rule_stats_page(request: Request, _: str = Depends(require_auth)):
+        return templates.TemplateResponse(
+            request,
+            "rule_stats.html",
+            {
+                "request": request,
+                "active": "rule_stats",
+                "rows": repository.rule_stats(),
+                "message": request.query_params.get("message", ""),
             },
         )
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import ssl
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -16,11 +15,9 @@ class SteamCurrencyProvider:
     widget_url = "https://steam-currency.ru/widget?pair={pair}&theme=light"
 
     def fetch(self) -> CurrencyRates:
-        usd, usd_unverified = self._fetch_pair("USD:RUB")
-        eur, eur_unverified = self._fetch_pair("EUR:RUB")
+        usd = self._fetch_pair("USD:RUB")
+        eur = self._fetch_pair("EUR:RUB")
         source = "steam-currency.ru/widget"
-        if usd_unverified or eur_unverified:
-            source += ":tls_unverified"
         return CurrencyRates(
             usd_to_rub=usd,
             eur_to_rub=eur,
@@ -29,34 +26,26 @@ class SteamCurrencyProvider:
             is_fallback=False,
         )
 
-    def _fetch_pair(self, pair: str) -> tuple[float, bool]:
+    def _fetch_pair(self, pair: str) -> float:
         url = self.widget_url.format(pair=urllib.request.quote(pair, safe=""))
-        body, used_unverified_tls = _read_url(url)
+        body = _read_url(url)
         rate = _extract_widget_rate(body, pair)
         if rate is None:
             rate = _extract_currency_rate(body, [pair, pair.replace(":", " → "), pair.split(":")[0]])
         if rate is None:
             raise ValueError(f"Не удалось найти курс {pair} на steam-currency.ru")
-        return rate, used_unverified_tls
+        return rate
 
 
-def _read_url(url: str) -> tuple[str, bool]:
+def _read_url(url: str) -> str:
     request = urllib.request.Request(
         url,
         headers={
             "User-Agent": "Mozilla/5.0 (compatible; Airmoney/0.1; +local)",
         },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            return response.read().decode("utf-8", errors="replace"), False
-    except urllib.error.URLError as error:
-        reason = getattr(error, "reason", None)
-        if not isinstance(reason, ssl.SSLError):
-            raise
-        context = ssl._create_unverified_context()
-        with urllib.request.urlopen(request, timeout=20, context=context) as response:
-            return response.read().decode("utf-8", errors="replace"), True
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
 def _extract_widget_rate(text: str, pair: str) -> float | None:
@@ -122,6 +111,11 @@ class CurrencyService:
         cached = load_cached_rates(self.cache_path)
         if cached and not force_refresh and is_cache_fresh(cached, self.settings.currency_cache_ttl_seconds):
             return cached
+
+        if self.settings.currency_provider == "fallback_only":
+            rates = fallback_rates(self.settings, source="settings_fallback:forced")
+            save_cached_rates(rates, self.cache_path)
+            return rates
 
         try:
             rates = self.provider.fetch()

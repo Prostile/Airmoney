@@ -83,6 +83,20 @@ def evaluate_listing(
     )
     score = recommendation_score(estimate.profit, estimate.roi_percent, min_profit, min_roi)
 
+    target_float_min = _optional_float(rule, "target_float_min")
+    target_float_max = _optional_float(rule, "target_float_max")
+    has_target_float = target_float_min is not None or target_float_max is not None
+    if not hard_skip and has_target_float:
+        target_left = target_float_min if target_float_min is not None else float("-inf")
+        target_right = target_float_max if target_float_max is not None else float("inf")
+        if float_value is not None and target_left <= float_value <= target_right:
+            score += 10
+            reasons.append("float входит в целевой диапазон")
+        elif float_value is None:
+            reasons.append("целевой float задан, но float не удалось определить")
+        else:
+            reasons.append("float проходит допустимый диапазон, но не целевой")
+
     if not reasons:
         if level in {"critical", "good"}:
             reasons.append("проходит минимальную прибыль и ROI")

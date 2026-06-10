@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Статистика правил</h1>
+    <p>Сводка по найденным лотам, кандидатам и пользовательским статусам.</p>
+  </div>
+</section>
+
+<div class="table-wrap wide">
+  <table>
+    <thead>
+      <tr>
+        <th>Правило</th>
+        <th>Предмет</th>
+        <th>Лоты</th>
+        <th>Кандидаты</th>
+        <th>Открыто</th>
+        <th>Куплено</th>
+        <th>Пропущено</th>
+        <th>Expired</th>
+        <th>Средний ROI</th>
+        <th>Средняя прибыль</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.rule_id }}</td>
+        <td>{{ row.display_name or row.market_hash_name }}</td>
+        <td>{{ row.listings_found or 0 }}</td>
+        <td>{{ row.candidates_created or 0 }}</td>
+        <td>{{ row.opened_count or 0 }}</td>
+        <td>{{ row.bought_count or 0 }}</td>
+        <td>{{ row.skipped_count or 0 }}</td>
+        <td>{{ row.expired_count or 0 }}</td>
+        <td>{% if row.avg_roi_percent is not none %}{{ "%.2f"|format(row.avg_roi_percent) }}%{% else %}-{% endif %}</td>
+        <td>{% if row.avg_profit_rub is not none %}{{ "%.2f"|format(row.avg_profit_rub) }} ₽{% else %}-{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

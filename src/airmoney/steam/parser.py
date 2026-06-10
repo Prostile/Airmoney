@@ -161,7 +161,7 @@ def parse_card(
     wear = parse_wear(text)
     now = utc_now_iso()
     listing_url = href or target.steam_market_url
-    listing_id = listing_identity(target.id, name, listing_url, price.buy_price_rub, pattern, wear)
+    listing_id = listing_identity(target.id, name, listing_url, pattern, wear)
 
     return MarketListing(
         id=listing_id,

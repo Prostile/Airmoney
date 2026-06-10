@@ -34,13 +34,26 @@ def test_currency_service_uses_fallback_without_cache(tmp_path):
 def test_steam_currency_provider_parses_widget_rates(monkeypatch):
     def fake_read_url(url):
         if "USD%3ARUB" in url:
-            return '<div class="pair">Курс Steam USD → RUB</div><div class="rate">72.01</div>', False
+            return '<div class="pair">Курс Steam USD → RUB</div><div class="rate">72.01</div>'
         if "EUR%3ARUB" in url:
-            return '<div class="pair">Курс Steam EUR → RUB</div><div class="rate">89.68</div>', True
+            return '<div class="pair">Курс Steam EUR → RUB</div><div class="rate">89.68</div>'
         raise AssertionError(url)
 
     monkeypatch.setattr(steam_currency, "_read_url", fake_read_url)
     rates = SteamCurrencyProvider().fetch()
     assert rates.usd_to_rub == 72.01
     assert rates.eur_to_rub == 89.68
-    assert rates.source == "steam-currency.ru/widget:tls_unverified"
+    assert rates.source == "steam-currency.ru/widget"
+
+
+def test_currency_service_supports_fallback_only_provider(tmp_path):
+    settings = ParserSettings(
+        currency_provider="fallback_only",
+        fallback_usd_to_rub=72,
+        fallback_eur_to_rub=86,
+    )
+    service = CurrencyService(settings, provider=BrokenProvider(), cache_path=str(tmp_path / "rates.json"))
+    rates = service.get_rates(force_refresh=True)
+    assert rates.usd_to_rub == 72
+    assert rates.eur_to_rub == 86
+    assert rates.source == "settings_fallback:forced"

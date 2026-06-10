@@ -53,7 +53,7 @@ def import_legacy_matches_csv(
             now = _legacy_time(row.get("scan_time"))
             listing_url = str(row.get("href") or source_url or "").strip()
             listing = MarketListing(
-                id=listing_identity(item_id, row.get("name"), listing_url, price_rub, row.get("pattern"), row.get("wear")),
+                id=listing_identity(item_id, row.get("name"), listing_url, row.get("pattern"), row.get("wear")),
                 item_definition_id=item_id,
                 rule_id=repository.get_rule_for_item(item_id)["id"],
                 skin_name=str(row.get("name") or source_label),
