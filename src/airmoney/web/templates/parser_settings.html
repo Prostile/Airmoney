@@ -1,0 +1,52 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Настройки парсинга</h1>
+    <p>Глобальные параметры сканирования, ROI, комиссии, валют и Telegram.</p>
+  </div>
+</section>
+
+<form class="form-grid" method="post" action="/settings">
+  <label class="check"><input type="checkbox" name="enabled" {% if settings.enabled %}checked{% endif %}> Мониторинг включён</label>
+  <label class="check"><input type="checkbox" name="headless" {% if settings.headless %}checked{% endif %}> Headless</label>
+  <label class="check"><input type="checkbox" name="telegram_alerts_enabled" {% if settings.telegram_alerts_enabled %}checked{% endif %}> Telegram-алерты</label>
+
+  <label>Интервал, сек.<input type="number" name="check_interval_seconds" value="{{ settings.check_interval_seconds }}" min="1"></label>
+  <label>Max scrolls<input type="number" name="max_scrolls" value="{{ settings.max_scrolls }}" min="0"></label>
+  <label>Задержка запросов, сек.<input type="number" step="0.1" name="request_delay_seconds" value="{{ settings.request_delay_seconds }}" min="0"></label>
+  <label>Пауза при блокировке, сек.<input type="number" name="steam_block_pause_seconds" value="{{ settings.steam_block_pause_seconds }}" min="0"></label>
+  <label>Лимит таблицы<input type="number" name="web_table_limit" value="{{ settings.web_table_limit }}" min="10"></label>
+  <label>Мин. уровень Telegram
+    <select name="telegram_min_alert_level">
+      {% for level in ["critical", "good", "watch", "skip"] %}
+      <option value="{{ level }}" {% if settings.telegram_min_alert_level == level %}selected{% endif %}>{{ level }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>Провайдер валют<input name="currency_provider" value="{{ settings.currency_provider }}"></label>
+  <label>TTL кэша валют, сек.<input type="number" name="currency_cache_ttl_seconds" value="{{ settings.currency_cache_ttl_seconds }}" min="1"></label>
+  <label>Fallback USD/RUB<input type="number" step="0.01" name="fallback_usd_to_rub" value="{{ settings.fallback_usd_to_rub }}" min="1"></label>
+  <label>Fallback EUR/RUB<input type="number" step="0.01" name="fallback_eur_to_rub" value="{{ settings.fallback_eur_to_rub }}" min="1"></label>
+
+  <label>Глобальный ROI, %<input type="number" step="0.01" name="default_roi_percent" value="{{ settings.default_roi_percent }}" min="0"></label>
+  <label>Комиссия площадки, %<input type="number" step="0.01" name="default_market_fee_percent" value="{{ settings.default_market_fee_percent }}" min="0" max="99"></label>
+  <label>Мин. прибыль, руб.<input type="number" step="0.01" name="default_min_profit_rub" value="{{ settings.default_min_profit_rub }}" min="0"></label>
+  <label>Мин. ROI, %<input type="number" step="0.01" name="default_min_roi_percent" value="{{ settings.default_min_roi_percent }}" min="0"></label>
+
+  <fieldset class="fieldset">
+    <legend>Состояния для новых предметов</legend>
+    {% for exterior in exteriors %}
+      <label class="check">
+        <input type="checkbox" name="{{ exterior_field(exterior) }}" {% if exterior in settings.selected_exterior_list %}checked{% endif %}>
+        {{ exterior }}
+      </label>
+    {% endfor %}
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit">Сохранить</button>
+  </div>
+</form>
+{% endblock %}

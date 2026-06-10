@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Коллекции</h1>
+    <p>Включай коллекции, из которых формируется рабочий список предметов.</p>
+  </div>
+  <a class="button-link secondary" href="/import-export">Импорт</a>
+</section>
+
+<form class="inline-form" method="post" action="/collections">
+  <input name="id" placeholder="id (опционально)">
+  <input name="name" placeholder="Название коллекции" required>
+  <input name="steam_collection_url" placeholder="Steam URL">
+  <label class="check"><input type="checkbox" name="enabled" checked> включена</label>
+  <button type="submit">Добавить</button>
+</form>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Название</th>
+        <th>Steam</th>
+        <th>Предметов</th>
+        <th>Последний парсинг</th>
+        <th>Включена</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in collections %}
+      <tr>
+        <td>{{ row.name }}</td>
+        <td>{% if row.steam_collection_url %}<a target="_blank" href="{{ row.steam_collection_url }}">открыть</a>{% else %}-{% endif %}</td>
+        <td>{{ row.item_count }}</td>
+        <td>{{ row.last_parsed_at or '-' }}</td>
+        <td>
+          <form method="post" action="/collections/{{ row.id }}/toggle">
+            <input type="hidden" name="enabled" value="{{ 0 if row.enabled else 1 }}">
+            <button class="secondary" type="submit">{{ 'да' if row.enabled else 'нет' }}</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="/collections/{{ row.id }}/scan">
+            <button class="secondary" type="submit">Скан</button>
+          </form>
+          <form method="post" action="/collections/{{ row.id }}/delete" data-confirm="Удалить коллекцию и её предметы?">
+            <button class="danger" type="submit">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

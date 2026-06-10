@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Запуски сканера</h1>
+    <p>История ручных, CLI и мониторинговых запусков.</p>
+  </div>
+</section>
+
+<div class="table-wrap wide">
+  <table>
+    <thead>
+      <tr>
+        <th>Статус</th>
+        <th>Источник</th>
+        <th>Коллекция</th>
+        <th>Предмет</th>
+        <th>Начало</th>
+        <th>Конец</th>
+        <th>Предметов</th>
+        <th>Лотов</th>
+        <th>Кандидатов</th>
+        <th>Алертов</th>
+        <th>Ошибка</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in scan_runs %}
+      <tr>
+        <td>{{ run.status }}</td>
+        <td>{{ run.trigger }}</td>
+        <td>{{ run.collection_id or '-' }}</td>
+        <td>{{ run.item_id or '-' }}</td>
+        <td>{{ run.started_at }}</td>
+        <td>{{ run.finished_at or '-' }}</td>
+        <td>{{ run.scanned_items }}</td>
+        <td>{{ run.listings_saved }}</td>
+        <td>{{ run.candidates_saved }}</td>
+        <td>{{ run.alerts_sent }}</td>
+        <td class="muted">{{ run.error }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

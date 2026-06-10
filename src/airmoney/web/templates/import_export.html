@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Импорт/экспорт</h1>
+    <p>Невалидный конфиг не применяется к базе.</p>
+  </div>
+  <a class="button-link" href="/export-config">Скачать YAML</a>
+</section>
+
+{% if errors %}
+<section class="errors">
+  <h2>Ошибки импорта</h2>
+  <ul>
+    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<form method="post" action="/import-export">
+  <textarea name="config_text" spellcheck="false">{{ config_text }}</textarea>
+  <div class="form-actions">
+    <button type="submit" name="action" value="validate" class="secondary">Проверить</button>
+    <button type="submit" name="action" value="import">Импортировать</button>
+    <button type="submit" name="action" value="catalog_validate" class="secondary">Проверить каталог</button>
+    <button type="submit" name="action" value="catalog_import">Добавить каталог</button>
+  </div>
+</form>
+{% endblock %}

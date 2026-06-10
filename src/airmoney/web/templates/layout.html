@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Airmoney</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='dashboard.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/dashboard">Airmoney</a>
+    <nav>
+      <a class="{{ 'active' if active == 'dashboard' else '' }}" href="/dashboard">Dashboard</a>
+      <a class="{{ 'active' if active == 'settings' else '' }}" href="/settings">Настройки</a>
+      <a class="{{ 'active' if active == 'collections' else '' }}" href="/collections">Коллекции</a>
+      <a class="{{ 'active' if active == 'items' else '' }}" href="/items">Предметы</a>
+      <a class="{{ 'active' if active == 'listings' else '' }}" href="/listings">Лоты</a>
+      <a class="{{ 'active' if active == 'candidates' else '' }}" href="/candidates">Кандидаты</a>
+      <a class="{{ 'active' if active == 'scan_runs' else '' }}" href="/scan-runs">Сканы</a>
+      <a class="{{ 'active' if active == 'import_export' else '' }}" href="/import-export">Импорт/экспорт</a>
+    </nav>
+  </header>
+
+  <main>
+    {% if message %}
+      <div class="notice">{{ message }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', path='app.js') }}"></script>
+</body>
+</html>

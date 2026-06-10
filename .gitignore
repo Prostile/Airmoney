@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+data/*.sqlite3
+data/*.log
+data/*.pid
+data/currency_cache.json
+data/*_smoke.*
+
+venv/

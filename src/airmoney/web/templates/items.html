@@ -1,0 +1,121 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Предметы и ROI</h1>
+    <p>Индивидуальные правила перекрывают глобальный ROI из настроек.</p>
+  </div>
+</section>
+
+<form class="inline-form" method="post" action="/items">
+  <select name="collection_id" required>
+    <option value="">Коллекция</option>
+    {% for collection in collections %}
+    <option value="{{ collection.id }}">{{ collection.name }}</option>
+    {% endfor %}
+  </select>
+  <input name="display_name" placeholder="AK-47 | Example">
+  <input name="market_hash_name" placeholder="Market hash name">
+  <select name="exterior">
+    <option value="">Состояние</option>
+    {% for exterior in exteriors %}<option value="{{ exterior }}">{{ exterior }}</option>{% endfor %}
+  </select>
+  <input name="rarity" placeholder="Редкость">
+  <input name="quality" placeholder="Качество">
+  <input name="steam_market_url" placeholder="Steam listing URL">
+  <label class="check"><input type="checkbox" name="enabled" checked> вкл.</label>
+  <button type="submit">Добавить</button>
+</form>
+
+<form class="inline-form" method="post" action="/items/generate-exteriors">
+  <select name="collection_id" required>
+    <option value="">Коллекция</option>
+    {% for collection in collections %}
+    <option value="{{ collection.id }}" {% if selected_collection == collection.id %}selected{% endif %}>{{ collection.name }}</option>
+    {% endfor %}
+  </select>
+  <input name="base_name" placeholder="Базовое имя: UMP-45 | Green Swirl" required>
+  <input name="market_name_prefix" placeholder="Префикс: Souvenir">
+  <input name="rarity" placeholder="Редкость">
+  <input name="quality" placeholder="Качество">
+  {% for exterior in exteriors %}
+  <label class="check">
+    <input type="checkbox" name="{{ exterior_field(exterior) }}" {% if exterior in settings.selected_exterior_list %}checked{% endif %}>
+    {{ exterior }}
+  </label>
+  {% endfor %}
+  <button type="submit">Создать состояния</button>
+</form>
+
+<form class="filters" method="get" action="/items">
+  <select name="collection_id">
+    <option value="">Все коллекции</option>
+    {% for collection in collections %}
+    <option value="{{ collection.id }}" {% if selected_collection == collection.id %}selected{% endif %}>{{ collection.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secondary">Фильтр</button>
+</form>
+
+<div class="table-wrap wide">
+  <table>
+    <thead>
+      <tr>
+        <th>Коллекция</th>
+        <th>Скин</th>
+        <th>Состояние</th>
+        <th>Цена</th>
+        <th>Правило</th>
+        <th>ROI / цель / лимиты</th>
+        <th>Telegram</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        {% set form_id = "item-rule-" ~ loop.index %}
+          <td>{{ item.collection_name }}</td>
+          <td>
+            <input form="{{ form_id }}" name="display_name" value="{{ item.display_name }}">
+            <input form="{{ form_id }}" name="steam_market_url" value="{{ item.steam_market_url }}" placeholder="Steam URL">
+          </td>
+          <td>
+            <input form="{{ form_id }}" name="exterior" value="{{ item.exterior }}" placeholder="Exterior">
+            <input form="{{ form_id }}" name="rarity" value="{{ item.rarity }}" placeholder="Rarity">
+            <input form="{{ form_id }}" name="quality" value="{{ item.quality }}" placeholder="Quality">
+          </td>
+          <td>
+            {% if item.current_price_rub %}<strong>{{ "%.2f"|format(item.current_price_rub) }}</strong> руб.{% else %}-{% endif %}
+            <div class="muted">{{ item.currency_source or '' }}</div>
+          </td>
+          <td>
+            <label class="check"><input form="{{ form_id }}" type="checkbox" name="item_enabled" {% if item.enabled %}checked{% endif %}> предмет</label>
+            <label class="check"><input form="{{ form_id }}" type="checkbox" name="rule_enabled" {% if item.rule_enabled is none or item.rule_enabled %}checked{% endif %}> правило</label>
+            <input form="{{ form_id }}" name="priority" value="0" placeholder="priority">
+          </td>
+          <td class="rule-grid">
+            <input form="{{ form_id }}" name="custom_roi_percent" value="{{ item.custom_roi_percent or '' }}" placeholder="ROI %, глоб. {{ settings.default_roi_percent }}">
+            <input form="{{ form_id }}" name="target_resale_price_rub" value="{{ item.target_resale_price_rub or '' }}" placeholder="Целевая продажа">
+            <input form="{{ form_id }}" name="max_buy_price_rub" value="{{ item.max_buy_price_rub or '' }}" placeholder="Макс. покупка">
+            <input form="{{ form_id }}" name="min_profit_rub" value="{{ item.min_profit_rub or '' }}" placeholder="Мин. прибыль">
+            <input form="{{ form_id }}" name="min_roi_percent" value="{{ item.min_roi_percent or '' }}" placeholder="Мин. ROI">
+            <input form="{{ form_id }}" name="float_min" value="{{ item.float_min or '' }}" placeholder="Float min">
+            <input form="{{ form_id }}" name="float_max" value="{{ item.float_max or '' }}" placeholder="Float max">
+            <input form="{{ form_id }}" name="pattern_ranges" value="{{ item.pattern_ranges or '' }}" placeholder="Pattern 1-5; 10">
+          </td>
+          <td><label class="check"><input form="{{ form_id }}" type="checkbox" name="telegram_alert_enabled" {% if item.telegram_alert_enabled is none or item.telegram_alert_enabled %}checked{% endif %}> алерт</label></td>
+          <td>
+            <form id="{{ form_id }}" method="post" action="/items/{{ item.id }}/rule">
+              <button type="submit">Сохранить</button>
+            </form>
+            <form method="post" action="/items/{{ item.id }}/scan">
+              <button class="secondary" type="submit">Скан</button>
+            </form>
+          </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

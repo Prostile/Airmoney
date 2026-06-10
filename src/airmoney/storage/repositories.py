@@ -1,0 +1,967 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import uuid
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from airmoney.config.models import (
+    Candidate,
+    Collection,
+    ItemDefinition,
+    MarketListing,
+    ParserSettings,
+    SnipingRule,
+    to_bool,
+    utc_now_iso,
+)
+from airmoney.storage.db import connect, initialize_database
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return dict(row)
+
+
+def _nullable_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
+def _nullable_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def _date_start(value: str) -> str:
+    text = str(value).strip()
+    if len(text) == 10:
+        return text + "T00:00:00"
+    return text
+
+
+def _date_end(value: str) -> str:
+    text = str(value).strip()
+    if len(text) == 10:
+        return text + "T23:59:59"
+    return text
+
+
+class Repository:
+    def __init__(self, db_path: str | Path | None = None):
+        self.db_path = db_path
+        initialize_database(db_path)
+
+    def connection(self) -> sqlite3.Connection:
+        return connect(self.db_path)
+
+    def get_settings(self) -> ParserSettings:
+        with self.connection() as connection:
+            row = connection.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+        if row is None:
+            return ParserSettings()
+        data = dict(row)
+        return ParserSettings(
+            enabled=to_bool(data["enabled"]),
+            check_interval_seconds=int(data["check_interval_seconds"]),
+            headless=to_bool(data["headless"]),
+            max_scrolls=int(data["max_scrolls"]),
+            request_delay_seconds=float(data["request_delay_seconds"]),
+            steam_block_pause_seconds=int(data["steam_block_pause_seconds"]),
+            currency_provider=data["currency_provider"],
+            currency_cache_ttl_seconds=int(data["currency_cache_ttl_seconds"]),
+            fallback_usd_to_rub=float(data["fallback_usd_to_rub"]),
+            fallback_eur_to_rub=float(data["fallback_eur_to_rub"]),
+            telegram_alerts_enabled=to_bool(data["telegram_alerts_enabled"]),
+            telegram_min_alert_level=data["telegram_min_alert_level"],
+            web_table_limit=int(data["web_table_limit"]),
+            default_roi_percent=float(data["default_roi_percent"]),
+            default_market_fee_percent=float(data["default_market_fee_percent"]),
+            default_min_profit_rub=float(data["default_min_profit_rub"]),
+            default_min_roi_percent=float(data["default_min_roi_percent"]),
+            selected_exteriors=data.get("selected_exteriors") or ParserSettings().selected_exteriors,
+            updated_at=data["updated_at"],
+        )
+
+    def save_settings(self, settings: ParserSettings) -> None:
+        settings.updated_at = utc_now_iso()
+        with self.connection() as connection:
+            connection.execute(
+                """
+                UPDATE settings SET
+                    enabled = :enabled,
+                    check_interval_seconds = :check_interval_seconds,
+                    headless = :headless,
+                    max_scrolls = :max_scrolls,
+                    request_delay_seconds = :request_delay_seconds,
+                    steam_block_pause_seconds = :steam_block_pause_seconds,
+                    currency_provider = :currency_provider,
+                    currency_cache_ttl_seconds = :currency_cache_ttl_seconds,
+                    fallback_usd_to_rub = :fallback_usd_to_rub,
+                    fallback_eur_to_rub = :fallback_eur_to_rub,
+                    telegram_alerts_enabled = :telegram_alerts_enabled,
+                    telegram_min_alert_level = :telegram_min_alert_level,
+                    web_table_limit = :web_table_limit,
+                    default_roi_percent = :default_roi_percent,
+                    default_market_fee_percent = :default_market_fee_percent,
+                    default_min_profit_rub = :default_min_profit_rub,
+                    default_min_roi_percent = :default_min_roi_percent,
+                    selected_exteriors = :selected_exteriors,
+                    updated_at = :updated_at
+                WHERE id = 1
+                """,
+                self._settings_params(settings),
+            )
+
+    def _settings_params(self, settings: ParserSettings) -> dict[str, Any]:
+        data = asdict(settings)
+        data["enabled"] = int(settings.enabled)
+        data["headless"] = int(settings.headless)
+        data["telegram_alerts_enabled"] = int(settings.telegram_alerts_enabled)
+        return data
+
+    def list_collections(self) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT c.*,
+                       COUNT(i.id) AS item_count,
+                       MAX(i.last_parsed_at) AS last_parsed_at
+                FROM collections c
+                LEFT JOIN items i ON i.collection_id = c.id
+                GROUP BY c.id
+                ORDER BY c.name
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_collection(self, collection_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM collections WHERE id = ?", (collection_id,)
+            ).fetchone()
+        return row_to_dict(row)
+
+    def save_collection(self, collection: Collection) -> None:
+        collection.updated_at = utc_now_iso()
+        if not collection.created_at:
+            collection.created_at = collection.updated_at
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO collections (
+                    id, name, steam_collection_url, enabled, created_at, updated_at
+                )
+                VALUES (:id, :name, :steam_collection_url, :enabled, :created_at, :updated_at)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    steam_collection_url = excluded.steam_collection_url,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                {
+                    **asdict(collection),
+                    "enabled": int(collection.enabled),
+                },
+            )
+
+    def delete_collection(self, collection_id: str) -> None:
+        with self.connection() as connection:
+            connection.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
+
+    def list_items(self, collection_id: str | None = None) -> list[dict[str, Any]]:
+        params: list[Any] = []
+        where = ""
+        if collection_id:
+            where = "WHERE i.collection_id = ?"
+            params.append(collection_id)
+
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT i.*,
+                       c.name AS collection_name,
+                       r.id AS rule_id,
+                       r.enabled AS rule_enabled,
+                       r.max_buy_price_rub,
+                       r.target_resale_price_rub,
+                       r.custom_roi_percent,
+                       r.min_profit_rub,
+                       r.min_roi_percent,
+                       r.float_min,
+                       r.float_max,
+                       r.pattern_ranges,
+                       r.telegram_alert_enabled,
+                       (
+                           SELECT ml.buy_price_rub
+                           FROM market_listings ml
+                           WHERE ml.item_definition_id = i.id
+                           ORDER BY ml.last_seen_at DESC
+                           LIMIT 1
+                       ) AS current_price_rub,
+                       (
+                           SELECT ml.currency_source
+                           FROM market_listings ml
+                           WHERE ml.item_definition_id = i.id
+                           ORDER BY ml.last_seen_at DESC
+                           LIMIT 1
+                       ) AS currency_source
+                FROM items i
+                JOIN collections c ON c.id = i.collection_id
+                LEFT JOIN sniping_rules r ON r.item_definition_id = i.id
+                {where}
+                ORDER BY c.name, i.display_name, i.market_hash_name
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_item(self, item_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+        return row_to_dict(row)
+
+    def save_item(self, item: ItemDefinition) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO items (
+                    id, collection_id, market_hash_name, display_name, weapon_type,
+                    rarity, quality, exterior, is_souvenir, is_stattrak,
+                    steam_market_url, enabled, last_parsed_at
+                )
+                VALUES (
+                    :id, :collection_id, :market_hash_name, :display_name, :weapon_type,
+                    :rarity, :quality, :exterior, :is_souvenir, :is_stattrak,
+                    :steam_market_url, :enabled, :last_parsed_at
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    collection_id = excluded.collection_id,
+                    market_hash_name = excluded.market_hash_name,
+                    display_name = excluded.display_name,
+                    weapon_type = excluded.weapon_type,
+                    rarity = excluded.rarity,
+                    quality = excluded.quality,
+                    exterior = excluded.exterior,
+                    is_souvenir = excluded.is_souvenir,
+                    is_stattrak = excluded.is_stattrak,
+                    steam_market_url = excluded.steam_market_url,
+                    enabled = excluded.enabled,
+                    last_parsed_at = excluded.last_parsed_at
+                """,
+                {
+                    **asdict(item),
+                    "enabled": int(item.enabled),
+                    "is_souvenir": int(item.is_souvenir),
+                    "is_stattrak": int(item.is_stattrak),
+                },
+            )
+        self.ensure_rule_for_item(item.id)
+
+    def update_item_enabled(self, item_id: str, enabled: bool) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE items SET enabled = ? WHERE id = ?", (int(enabled), item_id)
+            )
+
+    def delete_item(self, item_id: str) -> None:
+        with self.connection() as connection:
+            connection.execute("DELETE FROM items WHERE id = ?", (item_id,))
+
+    def ensure_rule_for_item(self, item_id: str) -> str:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT id FROM sniping_rules WHERE item_definition_id = ? LIMIT 1",
+                (item_id,),
+            ).fetchone()
+            if row:
+                return str(row["id"])
+            rule = SnipingRule(id=f"{item_id}_rule", item_definition_id=item_id)
+            connection.execute(
+                """
+                INSERT INTO sniping_rules (
+                    id, item_definition_id, enabled, max_buy_price_rub,
+                    target_resale_price_rub, custom_roi_percent, min_profit_rub,
+                    min_roi_percent, float_min, float_max, target_float_min,
+                    target_float_max, pattern_ranges, priority,
+                    telegram_alert_enabled, notes
+                )
+                VALUES (
+                    :id, :item_definition_id, :enabled, :max_buy_price_rub,
+                    :target_resale_price_rub, :custom_roi_percent, :min_profit_rub,
+                    :min_roi_percent, :float_min, :float_max, :target_float_min,
+                    :target_float_max, :pattern_ranges, :priority,
+                    :telegram_alert_enabled, :notes
+                )
+                """,
+                self._rule_params(rule),
+            )
+            return rule.id
+
+    def get_rule(self, rule_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM sniping_rules WHERE id = ?", (rule_id,)
+            ).fetchone()
+        return row_to_dict(row)
+
+    def get_rule_for_item(self, item_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM sniping_rules WHERE item_definition_id = ? LIMIT 1",
+                (item_id,),
+            ).fetchone()
+        return row_to_dict(row)
+
+    def list_rules(self) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM sniping_rules ORDER BY priority DESC, id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_rule(self, rule: SnipingRule) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO sniping_rules (
+                    id, item_definition_id, enabled, max_buy_price_rub,
+                    target_resale_price_rub, custom_roi_percent, min_profit_rub,
+                    min_roi_percent, float_min, float_max, target_float_min,
+                    target_float_max, pattern_ranges, priority,
+                    telegram_alert_enabled, notes
+                )
+                VALUES (
+                    :id, :item_definition_id, :enabled, :max_buy_price_rub,
+                    :target_resale_price_rub, :custom_roi_percent, :min_profit_rub,
+                    :min_roi_percent, :float_min, :float_max, :target_float_min,
+                    :target_float_max, :pattern_ranges, :priority,
+                    :telegram_alert_enabled, :notes
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    max_buy_price_rub = excluded.max_buy_price_rub,
+                    target_resale_price_rub = excluded.target_resale_price_rub,
+                    custom_roi_percent = excluded.custom_roi_percent,
+                    min_profit_rub = excluded.min_profit_rub,
+                    min_roi_percent = excluded.min_roi_percent,
+                    float_min = excluded.float_min,
+                    float_max = excluded.float_max,
+                    target_float_min = excluded.target_float_min,
+                    target_float_max = excluded.target_float_max,
+                    pattern_ranges = excluded.pattern_ranges,
+                    priority = excluded.priority,
+                    telegram_alert_enabled = excluded.telegram_alert_enabled,
+                    notes = excluded.notes
+                """,
+                self._rule_params(rule),
+            )
+
+    def _rule_params(self, rule: SnipingRule) -> dict[str, Any]:
+        data = asdict(rule)
+        data["enabled"] = int(rule.enabled)
+        data["telegram_alert_enabled"] = int(rule.telegram_alert_enabled)
+        return data
+
+    def build_scan_targets(
+        self,
+        collection_id: str | None = None,
+        item_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["i.enabled = 1", "c.enabled = 1"]
+        params: list[Any] = []
+        if collection_id:
+            clauses.append("c.id = ?")
+            params.append(collection_id)
+        if item_id:
+            clauses.append("i.id = ?")
+            params.append(item_id)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT i.*, c.name AS collection_name, r.id AS rule_id,
+                       r.max_buy_price_rub, r.float_min, r.float_max, r.pattern_ranges
+                FROM items i
+                JOIN collections c ON c.id = i.collection_id
+                LEFT JOIN sniping_rules r ON r.item_definition_id = i.id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY c.name, i.market_hash_name
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_listings_inactive_for_items(self, item_ids: list[str]) -> None:
+        if not item_ids:
+            return
+        placeholders = ",".join("?" for _ in item_ids)
+        with self.connection() as connection:
+            connection.execute(
+                f"""
+                UPDATE market_listings
+                SET is_active = 0
+                WHERE item_definition_id IN ({placeholders})
+                """,
+                item_ids,
+            )
+
+    def expire_candidates_for_inactive_listings(self) -> int:
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE candidates
+                SET status = 'expired', updated_at = ?
+                WHERE status = 'new'
+                  AND listing_id IN (
+                      SELECT id FROM market_listings WHERE is_active = 0
+                  )
+                """,
+                (utc_now_iso(),),
+            )
+            return cursor.rowcount
+
+    def save_listing(self, listing: MarketListing) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO market_listings (
+                    id, item_definition_id, rule_id, skin_name, market_hash_name,
+                    listing_url, search_url, buy_price_rub, buy_price_original,
+                    currency_original, currency_rate, currency_source, currency_fetched_at, float_value,
+                    pattern, wear_name, raw_text, first_seen_at, last_seen_at,
+                    is_active, parse_status
+                )
+                VALUES (
+                    :id, :item_definition_id, :rule_id, :skin_name, :market_hash_name,
+                    :listing_url, :search_url, :buy_price_rub, :buy_price_original,
+                    :currency_original, :currency_rate, :currency_source, :currency_fetched_at, :float_value,
+                    :pattern, :wear_name, :raw_text, :first_seen_at, :last_seen_at,
+                    :is_active, :parse_status
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    rule_id = excluded.rule_id,
+                    buy_price_rub = excluded.buy_price_rub,
+                    buy_price_original = excluded.buy_price_original,
+                    currency_original = excluded.currency_original,
+                    currency_rate = excluded.currency_rate,
+                    currency_source = excluded.currency_source,
+                    currency_fetched_at = excluded.currency_fetched_at,
+                    float_value = excluded.float_value,
+                    pattern = excluded.pattern,
+                    wear_name = excluded.wear_name,
+                    raw_text = excluded.raw_text,
+                    last_seen_at = excluded.last_seen_at,
+                    is_active = excluded.is_active,
+                    parse_status = excluded.parse_status
+                """,
+                {
+                    **asdict(listing),
+                    "is_active": int(listing.is_active),
+                },
+            )
+            connection.execute(
+                "UPDATE items SET last_parsed_at = ? WHERE id = ?",
+                (listing.last_seen_at, listing.item_definition_id),
+            )
+
+    def save_candidate(self, candidate: Candidate) -> None:
+        candidate.updated_at = utc_now_iso()
+        with self.connection() as connection:
+            existing = connection.execute(
+                "SELECT created_at, status FROM candidates WHERE listing_id = ?",
+                (candidate.listing_id,),
+            ).fetchone()
+            if existing:
+                candidate.created_at = existing["created_at"]
+                if existing["status"] != "new":
+                    candidate.status = existing["status"]
+            connection.execute(
+                """
+                INSERT INTO candidates (
+                    id, listing_id, rule_id, buy_price_rub, estimated_resale_price_rub,
+                    estimated_net_resale_rub, estimated_profit_rub,
+                    estimated_roi_percent, market_fee_percent, recommendation_level,
+                    recommendation_score, recommendation_reason, status, created_at,
+                    updated_at
+                )
+                VALUES (
+                    :id, :listing_id, :rule_id, :buy_price_rub, :estimated_resale_price_rub,
+                    :estimated_net_resale_rub, :estimated_profit_rub,
+                    :estimated_roi_percent, :market_fee_percent, :recommendation_level,
+                    :recommendation_score, :recommendation_reason, :status, :created_at,
+                    :updated_at
+                )
+                ON CONFLICT(listing_id) DO UPDATE SET
+                    rule_id = excluded.rule_id,
+                    buy_price_rub = excluded.buy_price_rub,
+                    estimated_resale_price_rub = excluded.estimated_resale_price_rub,
+                    estimated_net_resale_rub = excluded.estimated_net_resale_rub,
+                    estimated_profit_rub = excluded.estimated_profit_rub,
+                    estimated_roi_percent = excluded.estimated_roi_percent,
+                    market_fee_percent = excluded.market_fee_percent,
+                    recommendation_level = excluded.recommendation_level,
+                    recommendation_score = excluded.recommendation_score,
+                    recommendation_reason = excluded.recommendation_reason,
+                    status = excluded.status,
+                    updated_at = excluded.updated_at
+                """,
+                asdict(candidate),
+            )
+
+    def list_candidates(
+        self,
+        only_new: bool = False,
+        level: str | None = None,
+        status: str | None = None,
+        collection_id: str | None = None,
+        item_id: str | None = None,
+        min_profit: float | None = None,
+        min_roi: float | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 200,
+        sort: str = "time",
+    ) -> list[dict[str, Any]]:
+        clauses = ["c.recommendation_level != 'skip'"]
+        params: list[Any] = []
+        if only_new:
+            clauses.append("c.status = 'new'")
+        if level:
+            clauses.append("c.recommendation_level = ?")
+            params.append(level)
+        if status:
+            clauses.append("c.status = ?")
+            params.append(status)
+        if collection_id:
+            clauses.append("col.id = ?")
+            params.append(collection_id)
+        if item_id:
+            clauses.append("i.id = ?")
+            params.append(item_id)
+        if min_profit is not None:
+            clauses.append("c.estimated_profit_rub >= ?")
+            params.append(min_profit)
+        if min_roi is not None:
+            clauses.append("c.estimated_roi_percent >= ?")
+            params.append(min_roi)
+        if date_from:
+            clauses.append("c.created_at >= ?")
+            params.append(_date_start(date_from))
+        if date_to:
+            clauses.append("c.created_at <= ?")
+            params.append(_date_end(date_to))
+
+        order_by = {
+            "profit": "c.estimated_profit_rub DESC",
+            "roi": "c.estimated_roi_percent DESC",
+            "price": "c.buy_price_rub ASC",
+            "level": "CASE c.recommendation_level WHEN 'critical' THEN 1 WHEN 'good' THEN 2 WHEN 'watch' THEN 3 ELSE 4 END",
+            "time": "c.created_at DESC",
+        }.get(sort, "c.created_at DESC")
+
+        params.append(limit)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT c.*,
+                       ml.skin_name, ml.market_hash_name, ml.listing_url, ml.search_url,
+                       ml.float_value, ml.pattern, ml.currency_source, ml.currency_fetched_at, ml.last_seen_at,
+                       i.id AS item_id, i.display_name, i.exterior,
+                       col.id AS collection_id, col.name AS collection_name
+                FROM candidates c
+                JOIN market_listings ml ON ml.id = c.listing_id
+                JOIN items i ON i.id = ml.item_definition_id
+                JOIN collections col ON col.id = i.collection_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY {order_by}
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_candidate_status(self, candidate_id: str, status: str) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE candidates SET status = ?, updated_at = ? WHERE id = ?",
+                (status, utc_now_iso(), candidate_id),
+            )
+
+    def get_candidate_details(self, candidate_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT c.*,
+                       ml.skin_name, ml.market_hash_name, ml.listing_url, ml.search_url,
+                       ml.float_value, ml.pattern, ml.currency_source, ml.currency_fetched_at,
+                       i.id AS item_id, i.display_name, i.exterior,
+                       col.id AS collection_id, col.name AS collection_name
+                FROM candidates c
+                JOIN market_listings ml ON ml.id = c.listing_id
+                JOIN items i ON i.id = ml.item_definition_id
+                JOIN collections col ON col.id = i.collection_id
+                WHERE c.id = ?
+                """,
+                (candidate_id,),
+            ).fetchone()
+        return row_to_dict(row)
+
+    def update_candidate_statuses(self, candidate_ids: list[str], status: str) -> int:
+        if not candidate_ids:
+            return 0
+        placeholders = ",".join("?" for _ in candidate_ids)
+        with self.connection() as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE candidates
+                SET status = ?, updated_at = ?
+                WHERE id IN ({placeholders})
+                """,
+                [status, utc_now_iso(), *candidate_ids],
+            )
+            return cursor.rowcount
+
+    def list_market_listings(
+        self,
+        collection_id: str | None = None,
+        item_id: str | None = None,
+        active_only: bool = False,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if collection_id:
+            clauses.append("c.id = ?")
+            params.append(collection_id)
+        if item_id:
+            clauses.append("i.id = ?")
+            params.append(item_id)
+        if active_only:
+            clauses.append("ml.is_active = 1")
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(limit)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT ml.*,
+                       i.display_name, i.exterior,
+                       c.name AS collection_name
+                FROM market_listings ml
+                JOIN items i ON i.id = ml.item_definition_id
+                JOIN collections c ON c.id = i.collection_id
+                {where}
+                ORDER BY ml.last_seen_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def dashboard_stats(self) -> dict[str, Any]:
+        with self.connection() as connection:
+            candidates_total = connection.execute(
+                "SELECT COUNT(*) AS count FROM candidates WHERE recommendation_level != 'skip'"
+            ).fetchone()["count"]
+            new_total = connection.execute(
+                "SELECT COUNT(*) AS count FROM candidates WHERE status = 'new' AND recommendation_level != 'skip'"
+            ).fetchone()["count"]
+            by_level = {
+                row["recommendation_level"]: row["count"]
+                for row in connection.execute(
+                    """
+                    SELECT recommendation_level, COUNT(*) AS count
+                    FROM candidates
+                    GROUP BY recommendation_level
+                    """
+                ).fetchall()
+            }
+            latest_parse = connection.execute(
+                "SELECT MAX(last_seen_at) AS value FROM market_listings"
+            ).fetchone()["value"]
+            active_items = connection.execute(
+                "SELECT COUNT(*) AS count FROM items WHERE enabled = 1"
+            ).fetchone()["count"]
+            active_collections = connection.execute(
+                "SELECT COUNT(*) AS count FROM collections WHERE enabled = 1"
+            ).fetchone()["count"]
+        return {
+            "candidates_total": candidates_total,
+            "new_total": new_total,
+            "critical_total": by_level.get("critical", 0),
+            "good_total": by_level.get("good", 0),
+            "watch_total": by_level.get("watch", 0),
+            "latest_parse": latest_parse,
+            "active_items": active_items,
+            "active_collections": active_collections,
+        }
+
+    def save_currency_rate(
+        self,
+        usd_to_rub: float,
+        eur_to_rub: float,
+        source: str,
+        fetched_at: str,
+        is_fallback: bool,
+    ) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO currency_rates (
+                    usd_to_rub, eur_to_rub, source, fetched_at, is_fallback
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (usd_to_rub, eur_to_rub, source, fetched_at, int(is_fallback)),
+            )
+
+    def latest_currency_rate(self) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM currency_rates ORDER BY fetched_at DESC, id DESC LIMIT 1"
+            ).fetchone()
+        return row_to_dict(row)
+
+    def log_telegram_alert(self, candidate_id: str, status: str, error: str = "") -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO telegram_alerts (id, candidate_id, sent_at, status, error)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (new_id("tg"), candidate_id, utc_now_iso(), status, error),
+            )
+
+    def list_unsent_alert_candidates(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT c.*,
+                       ml.skin_name, ml.market_hash_name, ml.listing_url, ml.search_url,
+                       ml.float_value, ml.pattern, ml.currency_source, ml.currency_fetched_at,
+                       i.display_name, col.name AS collection_name,
+                       r.telegram_alert_enabled
+                FROM candidates c
+                JOIN market_listings ml ON ml.id = c.listing_id
+                JOIN items i ON i.id = ml.item_definition_id
+                JOIN collections col ON col.id = i.collection_id
+                LEFT JOIN sniping_rules r ON r.id = c.rule_id
+                LEFT JOIN telegram_alerts ta
+                    ON ta.candidate_id = c.id AND ta.status = 'sent'
+                WHERE c.status = 'new'
+                  AND c.recommendation_level IN ('critical', 'good')
+                  AND COALESCE(r.telegram_alert_enabled, 1) = 1
+                  AND ta.id IS NULL
+                ORDER BY c.recommendation_score DESC, c.created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def log_user_action(self, entity_type: str, entity_id: str, action: str, payload: dict[str, Any] | None = None) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO user_actions (id, entity_type, entity_id, action, payload, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id("act"),
+                    entity_type,
+                    entity_id,
+                    action,
+                    json.dumps(payload or {}, ensure_ascii=False),
+                    utc_now_iso(),
+                ),
+            )
+
+    def start_scan_run(
+        self,
+        trigger: str,
+        collection_id: str | None = None,
+        item_id: str | None = None,
+    ) -> str:
+        run_id = new_id("scan")
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO scan_runs (
+                    id, trigger, collection_id, item_id, status, started_at
+                )
+                VALUES (?, ?, ?, ?, 'running', ?)
+                """,
+                (run_id, trigger, collection_id, item_id, utc_now_iso()),
+            )
+        return run_id
+
+    def finish_scan_run(
+        self,
+        run_id: str,
+        status: str,
+        scanned_items: int = 0,
+        listings_saved: int = 0,
+        candidates_saved: int = 0,
+        alerts_sent: int = 0,
+        error: str = "",
+    ) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                UPDATE scan_runs
+                SET status = ?,
+                    finished_at = ?,
+                    scanned_items = ?,
+                    listings_saved = ?,
+                    candidates_saved = ?,
+                    alerts_sent = ?,
+                    error = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    utc_now_iso(),
+                    int(scanned_items),
+                    int(listings_saved),
+                    int(candidates_saved),
+                    int(alerts_sent),
+                    error[:2000],
+                    run_id,
+                ),
+            )
+
+    def latest_scan_run(self) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT 1"
+            ).fetchone()
+        return row_to_dict(row)
+
+    def list_scan_runs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def replace_config(
+        self,
+        settings: ParserSettings,
+        collections: list[Collection],
+        items: list[ItemDefinition],
+        rules: list[SnipingRule],
+    ) -> None:
+        with self.connection() as connection:
+            connection.execute("BEGIN")
+            self._replace_config_in_connection(connection, settings, collections, items, rules)
+
+    def _replace_config_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        settings: ParserSettings,
+        collections: list[Collection],
+        items: list[ItemDefinition],
+        rules: list[SnipingRule],
+    ) -> None:
+        settings.updated_at = utc_now_iso()
+        connection.execute("DELETE FROM sniping_rules")
+        connection.execute("DELETE FROM items")
+        connection.execute("DELETE FROM collections")
+        connection.execute(
+            """
+            UPDATE settings SET
+                enabled = :enabled,
+                check_interval_seconds = :check_interval_seconds,
+                headless = :headless,
+                max_scrolls = :max_scrolls,
+                request_delay_seconds = :request_delay_seconds,
+                steam_block_pause_seconds = :steam_block_pause_seconds,
+                currency_provider = :currency_provider,
+                currency_cache_ttl_seconds = :currency_cache_ttl_seconds,
+                fallback_usd_to_rub = :fallback_usd_to_rub,
+                fallback_eur_to_rub = :fallback_eur_to_rub,
+                telegram_alerts_enabled = :telegram_alerts_enabled,
+                telegram_min_alert_level = :telegram_min_alert_level,
+                web_table_limit = :web_table_limit,
+                default_roi_percent = :default_roi_percent,
+                default_market_fee_percent = :default_market_fee_percent,
+                default_min_profit_rub = :default_min_profit_rub,
+                default_min_roi_percent = :default_min_roi_percent,
+                selected_exteriors = :selected_exteriors,
+                updated_at = :updated_at
+            WHERE id = 1
+            """,
+            self._settings_params(settings),
+        )
+        for collection in collections:
+            connection.execute(
+                """
+                INSERT INTO collections (
+                    id, name, steam_collection_url, enabled, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    collection.id,
+                    collection.name,
+                    collection.steam_collection_url,
+                    int(collection.enabled),
+                    collection.created_at or utc_now_iso(),
+                    collection.updated_at or utc_now_iso(),
+                ),
+            )
+        for item in items:
+            connection.execute(
+                """
+                INSERT INTO items (
+                    id, collection_id, market_hash_name, display_name, weapon_type,
+                    rarity, quality, exterior, is_souvenir, is_stattrak,
+                    steam_market_url, enabled, last_parsed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item.id,
+                    item.collection_id,
+                    item.market_hash_name,
+                    item.display_name,
+                    item.weapon_type,
+                    item.rarity,
+                    item.quality,
+                    item.exterior,
+                    int(item.is_souvenir),
+                    int(item.is_stattrak),
+                    item.steam_market_url,
+                    int(item.enabled),
+                    item.last_parsed_at,
+                ),
+            )
+        for rule in rules:
+            connection.execute(
+                """
+                INSERT INTO sniping_rules (
+                    id, item_definition_id, enabled, max_buy_price_rub,
+                    target_resale_price_rub, custom_roi_percent, min_profit_rub,
+                    min_roi_percent, float_min, float_max, target_float_min,
+                    target_float_max, pattern_ranges, priority,
+                    telegram_alert_enabled, notes
+                )
+                VALUES (
+                    :id, :item_definition_id, :enabled, :max_buy_price_rub,
+                    :target_resale_price_rub, :custom_roi_percent, :min_profit_rub,
+                    :min_roi_percent, :float_min, :float_max, :target_float_min,
+                    :target_float_max, :pattern_ranges, :priority,
+                    :telegram_alert_enabled, :notes
+                )
+                """,
+                self._rule_params(rule),
+            )

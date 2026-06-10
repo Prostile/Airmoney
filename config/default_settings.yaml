@@ -1,0 +1,35 @@
+version: 1
+
+parser:
+  enabled: false
+  check_interval_seconds: 300
+  headless: true
+  max_scrolls: 1
+  request_delay_seconds: 2
+  steam_block_pause_seconds: 1800
+  selected_exteriors:
+    - Factory New
+    - Minimal Wear
+    - Field-Tested
+    - Well-Worn
+    - Battle-Scarred
+
+currency:
+  provider: steam_currency
+  cache_ttl_seconds: 21600
+  fallback_usd_to_rub: 72.0
+  fallback_eur_to_rub: 86.0
+
+profit:
+  global_roi_percent: 12
+  market_fee_percent: 15
+  min_profit_rub: 300
+  min_roi_percent: 7
+
+telegram:
+  enabled: false
+  min_alert_level: good
+
+collections: []
+items: []
+rules: []

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Airmoney candidates</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='dashboard.css') }}">
+</head>
+<body>
+  <main>
+    <section class="page-head">
+      <div>
+        <h1>Кандидаты</h1>
+        <p>HTML-отчёт Airmoney.</p>
+      </div>
+    </section>
+    <div class="table-wrap wide">
+      <table>
+        <thead>
+          <tr>
+            <th>Уровень</th>
+            <th>Статус</th>
+            <th>Скин</th>
+            <th>Коллекция</th>
+            <th>Покупка</th>
+            <th>Продажа</th>
+            <th>Профит</th>
+            <th>ROI</th>
+            <th>Float</th>
+            <th>Pattern</th>
+            <th>Найден</th>
+            <th>Курс</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in candidates %}
+          <tr>
+            <td>{{ row.recommendation_level }}</td>
+            <td>{{ row.status }}</td>
+            <td>{{ row.skin_name }}</td>
+            <td>{{ row.collection_name }}</td>
+            <td>{{ "%.2f"|format(row.buy_price_rub) }}</td>
+            <td>{{ "%.2f"|format(row.estimated_resale_price_rub) }}</td>
+            <td>{{ "%.2f"|format(row.estimated_profit_rub) }}</td>
+            <td>{{ "%.2f"|format(row.estimated_roi_percent) }}%</td>
+            <td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else '-' }}</td>
+            <td>{{ row.pattern if row.pattern is not none else '-' }}</td>
+            <td>{{ row.created_at }}</td>
+            <td>{{ row.currency_source }} {{ row.currency_fetched_at or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>

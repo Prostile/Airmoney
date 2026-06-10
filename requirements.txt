@@ -1,0 +1,6 @@
+playwright
+fastapi
+uvicorn
+jinja2
+pyyaml
+pytest

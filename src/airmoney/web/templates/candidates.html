@@ -1,0 +1,118 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Кандидаты</h1>
+    <p>Основная таблица для ручной проверки и открытия Steam.</p>
+  </div>
+  <div class="form-actions">
+    <a class="button-link secondary" href="/reports/candidates.csv">CSV</a>
+    <a class="button-link secondary" href="/reports/candidates.html" target="_blank">HTML</a>
+  </div>
+</section>
+
+<form class="filters" method="get" action="/candidates">
+  <label class="check"><input type="checkbox" name="only_new" value="true" {% if filters.only_new %}checked{% endif %}> только новые</label>
+  <select name="level">
+    <option value="">Все уровни</option>
+    {% for level in ["critical", "good", "watch"] %}
+    <option value="{{ level }}" {% if filters.level == level %}selected{% endif %}>{{ level }}</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">Все статусы</option>
+    {% for status in ["new", "opened", "checked", "bought_manually", "skipped", "expired"] %}
+    <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+    {% endfor %}
+  </select>
+  <select name="collection_id">
+    <option value="">Все коллекции</option>
+    {% for collection in collections %}
+    <option value="{{ collection.id }}" {% if filters.collection_id == collection.id %}selected{% endif %}>{{ collection.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="item_id">
+    <option value="">Все предметы</option>
+    {% for item in items %}
+    <option value="{{ item.id }}" {% if filters.item_id == item.id %}selected{% endif %}>{{ item.display_name }} {{ item.exterior }}</option>
+    {% endfor %}
+  </select>
+  <input type="number" step="0.01" name="min_profit" value="{{ filters.min_profit or '' }}" placeholder="Профит от">
+  <input type="number" step="0.01" name="min_roi" value="{{ filters.min_roi or '' }}" placeholder="ROI от">
+  <input type="date" name="date_from" value="{{ filters.date_from or '' }}">
+  <input type="date" name="date_to" value="{{ filters.date_to or '' }}">
+  <select name="sort">
+    {% for option in ["time", "profit", "roi", "price", "level"] %}
+    <option value="{{ option }}" {% if filters.sort == option %}selected{% endif %}>sort {{ option }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Применить</button>
+</form>
+
+<form id="bulk-candidates" class="filters" method="post" action="/candidates/bulk-status">
+  <select name="new_status">
+    {% for status in ["opened", "checked", "bought_manually", "skipped", "expired"] %}
+    <option value="{{ status }}">{{ status }}</option>
+    {% endfor %}
+  </select>
+  <button class="secondary" type="submit">Применить к выбранным</button>
+</form>
+
+<div class="table-wrap wide">
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Статус</th>
+        <th>Уровень</th>
+        <th>Скин</th>
+        <th>Коллекция</th>
+        <th>Правило</th>
+        <th>Покупка</th>
+        <th>Продажа</th>
+        <th>Чистыми</th>
+        <th>Профит</th>
+        <th>ROI</th>
+        <th>Float</th>
+        <th>Pattern</th>
+        <th>Курс</th>
+        <th>Найден</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in candidates %}
+      <tr class="level-{{ row.recommendation_level }}">
+        <td><input form="bulk-candidates" type="checkbox" name="candidate_id" value="{{ row.id }}"></td>
+        <td>{{ row.status }}</td>
+        <td><span class="pill {{ row.recommendation_level }}">{{ row.recommendation_level }}</span><div class="muted">{{ row.recommendation_reason }}</div></td>
+        <td>{{ row.skin_name }}</td>
+        <td>{{ row.collection_name }}</td>
+        <td>{{ row.rule_id or '-' }}</td>
+        <td>{{ "%.2f"|format(row.buy_price_rub) }}</td>
+        <td>{{ "%.2f"|format(row.estimated_resale_price_rub) }}</td>
+        <td>{{ "%.2f"|format(row.estimated_net_resale_rub) }}</td>
+        <td class="{{ 'positive' if row.estimated_profit_rub > 0 else 'negative' }}">{{ "%.2f"|format(row.estimated_profit_rub) }}</td>
+        <td>{{ "%.2f"|format(row.estimated_roi_percent) }}%</td>
+        <td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else '-' }}</td>
+        <td>{{ row.pattern if row.pattern is not none else '-' }}</td>
+        <td>{{ row.currency_source }}<div class="muted">{{ row.currency_fetched_at or '-' }}</div></td>
+        <td>{{ row.created_at }}</td>
+        <td class="actions">
+          {% if row.listing_url %}<a target="_blank" href="/candidates/{{ row.id }}/open?target=listing">Steam</a>{% endif %}
+          {% if row.search_url %}<a target="_blank" href="/candidates/{{ row.id }}/open?target=search">Поиск</a>{% endif %}
+          <form method="post" action="/candidates/{{ row.id }}/status">
+            <select name="new_status">
+              {% for status in ["opened", "checked", "bought_manually", "skipped", "expired"] %}
+              <option value="{{ status }}">{{ status }}</option>
+              {% endfor %}
+            </select>
+            <button class="secondary" type="submit">OK</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

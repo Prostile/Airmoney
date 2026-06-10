@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>Лоты</h1>
+    <p>Все найденные карточки Steam Market, включая те, которые не прошли в кандидаты.</p>
+  </div>
+</section>
+
+<form class="filters" method="get" action="/listings">
+  <label class="check"><input type="checkbox" name="active_only" value="true" {% if filters.active_only %}checked{% endif %}> только активные</label>
+  <select name="collection_id">
+    <option value="">Все коллекции</option>
+    {% for collection in collections %}
+    <option value="{{ collection.id }}" {% if filters.collection_id == collection.id %}selected{% endif %}>{{ collection.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Применить</button>
+</form>
+
+<div class="table-wrap wide">
+  <table>
+    <thead>
+      <tr>
+        <th>Активен</th>
+        <th>Скин</th>
+        <th>Коллекция</th>
+        <th>Покупка</th>
+        <th>Оригинал</th>
+        <th>Float</th>
+        <th>Pattern</th>
+        <th>Курс</th>
+        <th>Последний раз</th>
+        <th>Ссылки</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in listings %}
+      <tr>
+        <td>{{ 'да' if row.is_active else 'нет' }}</td>
+        <td>{{ row.skin_name }}<div class="muted">{{ row.market_hash_name }}</div></td>
+        <td>{{ row.collection_name }}</td>
+        <td>{{ "%.2f"|format(row.buy_price_rub) }} руб.</td>
+        <td>{{ row.buy_price_original or '-' }} {{ row.currency_original }}</td>
+        <td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else '-' }}</td>
+        <td>{{ row.pattern if row.pattern is not none else '-' }}</td>
+        <td>{{ row.currency_source }}<div class="muted">{{ row.currency_fetched_at or '-' }}</div></td>
+        <td>{{ row.last_seen_at }}</td>
+        <td>
+          {% if row.listing_url %}<a target="_blank" href="{{ row.listing_url }}">Steam</a>{% endif %}
+          {% if row.search_url %}<a target="_blank" href="{{ row.search_url }}">Поиск</a>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

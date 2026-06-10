@@ -1,0 +1,31 @@
+collections:
+  - id: active_drop
+    name: Active Drop
+    steam_collection_url: "https://steamcommunity.com/market/search?appid=730"
+    enabled: true
+    items:
+      - base_name: "UMP-45 | Green Swirl"
+        market_name_prefix: "Souvenir"
+        rarity: "Restricted"
+        quality: "Souvenir"
+        exteriors:
+          - Factory New
+          - Minimal Wear
+          - Field-Tested
+
+items:
+  - collection_id: active_drop
+    market_hash_name: "AK-47 | Example (Field-Tested)"
+    display_name: "AK-47 | Example"
+    rarity: "Classified"
+    exterior: "Field-Tested"
+    enabled: true
+
+rules:
+  - item_id: active_drop_ak_47_example_field_tested
+    enabled: true
+    max_buy_price_rub: 4400
+    target_resale_price_rub: 5600
+    min_profit_rub: 400
+    min_roi_percent: 8
+    telegram_alert_enabled: true
