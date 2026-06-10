@@ -22,6 +22,59 @@ http://127.0.0.1:8000
 
 Логин и пароль лежат в `.env`. Файл `.env` добавлен в `.gitignore`.
 
+## Запуск на сервере через Docker Compose
+
+Docker-режим нужен только для серверного запуска. Обычные команды `python -m airmoney ...` остаются рабочими без Docker.
+
+Перед запуском создай `.env` на сервере:
+
+```bash
+cp .env.example .env
+```
+
+Заполни минимум:
+
+```text
+AIRMONEY_WEB_USER=admin
+AIRMONEY_WEB_PASSWORD=strong-password
+AIRMONEY_SITE_URL=https://your-domain.ru
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+```
+
+Запуск:
+
+```bash
+docker compose up -d --build
+```
+
+Compose создаёт контейнер `container-1`, подключает его к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
+
+Если nginx тоже запущен в Docker, подключи nginx-контейнер к этой сети:
+
+```bash
+docker network connect airmoney_net nginx
+```
+
+Минимальный upstream для nginx:
+
+```nginx
+location / {
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://container-1:8000;
+}
+```
+
+Проверка:
+
+```bash
+docker compose ps
+docker compose logs -f container-1
+```
+
 ## Основные команды
 
 ```bash
