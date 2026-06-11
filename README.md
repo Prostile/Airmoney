@@ -48,7 +48,7 @@ TELEGRAM_CHAT_ID=
 docker compose up -d --build --force-recreate
 ```
 
-Compose создаёт VPN-gateway контейнер `container-1`, запускает приложение в контейнере `airmoney-app` через сетевой namespace gateway, подключает `container-1` к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
+Compose создаёт контейнер приложения `container-1` и VPN/proxy контейнер `vpn-gateway`, подключает их к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Nginx должен ходить на `http://container-1:8000`, а исходящий HTTP/HTTPS-трафик приложения идёт через `vpn-gateway:10808`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
 
 Перед первым запуском Docker-режима подготовь VPN-конфиг:
 
@@ -57,7 +57,7 @@ cp vpn/sing-box.example.json vpn/sing-box.json
 ```
 
 В `vpn/sing-box.json` укажи реальные `server`, `uuid`, `flow`, `packet_encoding` и TLS-параметры. Этот файл содержит секреты и игнорируется git.
-Проверь, что inbound `mixed` на `127.0.0.1:10808` включён: приложение использует его как локальный proxy для Python/Telegram/валют и Playwright.
+Проверь, что inbound `mixed` на `0.0.0.0:10808` включён: приложение использует его как proxy для Python/Telegram/валют и Playwright.
 
 Если nginx тоже запущен в Docker, подключи nginx-контейнер к этой сети:
 
@@ -82,13 +82,13 @@ location / {
 ```bash
 docker compose ps
 docker compose logs -f container-1
-docker compose logs -f airmoney-app
+docker compose logs -f vpn-gateway
 ```
 
 Проверка, что исходящий трафик приложения идёт через VPN:
 
 ```bash
-docker compose exec airmoney-app python -c "import urllib.request; print(urllib.request.urlopen('https://api.ipify.org', timeout=15).read().decode())"
+docker compose exec container-1 python -c "import urllib.request; print(urllib.request.urlopen('https://api.ipify.org', timeout=15).read().decode())"
 ```
 
 ## Основные команды

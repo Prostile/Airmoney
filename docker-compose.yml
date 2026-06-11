@@ -1,7 +1,7 @@
 services:
-  container-1:
+  vpn-gateway:
     image: ${SING_BOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.13}
-    container_name: container-1
+    container_name: airmoney-vpn
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
@@ -12,34 +12,35 @@ services:
       - sing-box-data:/var/lib/sing-box
     command: ["run", "--config", "/etc/sing-box/config.json", "--directory", "/var/lib/sing-box"]
     expose:
-      - "8000"
+      - "10808"
     networks:
       - airmoney_net
 
-  airmoney-app:
-    container_name: airmoney-app
+  container-1:
+    container_name: container-1
     build:
       context: .
     restart: unless-stopped
     depends_on:
-      container-1:
+      vpn-gateway:
         condition: service_started
-    network_mode: "service:container-1"
     env_file:
       - .env
     environment:
-      AIRMONEY_BROWSER_PROXY: http://127.0.0.1:10808
-      HTTP_PROXY: http://127.0.0.1:10808
-      HTTPS_PROXY: http://127.0.0.1:10808
-      ALL_PROXY: http://127.0.0.1:10808
-      NO_PROXY: 127.0.0.1,localhost,container-1,airmoney-app
-      http_proxy: http://127.0.0.1:10808
-      https_proxy: http://127.0.0.1:10808
-      all_proxy: http://127.0.0.1:10808
-      no_proxy: 127.0.0.1,localhost,container-1,airmoney-app
+      AIRMONEY_BROWSER_PROXY: http://vpn-gateway:10808
+      HTTP_PROXY: http://vpn-gateway:10808
+      HTTPS_PROXY: http://vpn-gateway:10808
+      ALL_PROXY: http://vpn-gateway:10808
+      NO_PROXY: 127.0.0.1,localhost,container-1,vpn-gateway,airmoney-vpn
+      http_proxy: http://vpn-gateway:10808
+      https_proxy: http://vpn-gateway:10808
+      all_proxy: http://vpn-gateway:10808
+      no_proxy: 127.0.0.1,localhost,container-1,vpn-gateway,airmoney-vpn
     volumes:
       - ./data:/app/data
       - ./config:/app/config:ro
+    expose:
+      - "8000"
     healthcheck:
       test:
         [
@@ -52,6 +53,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    networks:
+      - airmoney_net
 
 networks:
   airmoney_net:
