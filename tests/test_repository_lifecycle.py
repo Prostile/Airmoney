@@ -98,6 +98,41 @@ def test_scan_run_lifecycle_and_bulk_candidate_status(tmp_path):
     assert len(repo.list_candidates(status="checked", limit=10)) == 2
 
 
+def test_exact_item_only_filters_stored_exact_matches(tmp_path):
+    repo = Repository(tmp_path / "test.sqlite3")
+    repo.save_collection(Collection(id="c1", name="Collection"))
+    repo.save_item(ItemDefinition(id="i1", collection_id="c1", market_hash_name="Skin A"))
+    rule = repo.get_rule_for_item("i1")
+    now = utc_now_iso()
+
+    for index, exact in enumerate([True, False]):
+        listing = MarketListing(
+            id=f"listing_exact_{index}",
+            item_definition_id="i1",
+            rule_id=rule["id"],
+            skin_name="Skin A",
+            buy_price_rub=1000,
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+        repo.save_listing(listing)
+        candidate = evaluate_listing(
+            listing_id=listing.id,
+            buy_price_rub=1000,
+            float_value=None,
+            pattern=None,
+            rule={**rule, "target_resale_price_rub": 1500},
+            settings=repo.get_settings(),
+        )
+        candidate.exact_item_match = exact
+        repo.save_candidate(candidate)
+
+    rows = repo.list_candidates(exact_item_only=True, limit=10)
+
+    assert len(rows) == 1
+    assert rows[0]["exact_item_match"] == 1
+
+
 def test_scan_without_enabled_collections_is_skipped_with_diagnostic(tmp_path):
     repo = Repository(tmp_path / "test.sqlite3")
     repo.save_collection(Collection(id="c1", name="Collection", enabled=False))

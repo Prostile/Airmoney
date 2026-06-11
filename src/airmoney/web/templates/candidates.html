@@ -171,6 +171,7 @@
           <td>
             <span class="badge badge-level-{{ row.recommendation_level }}">{{ row.recommendation_level }}</span>
             <div class="text-secondary small mt-1">{{ row.analysis_mode or 'legacy' }}</div>
+            <div class="text-secondary small mt-1">{{ "exact" if row.exact_item_match else "compatible" }}</div>
           </td>
           <td>{{ "%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score) }}</td>
           <td class="fw-semibold">
@@ -191,17 +192,20 @@
             <div>Fair: {{ "%.2f"|format(row.fair_price_rub) if row.fair_price_rub is not none else '-' }}</div>
             <div class="text-secondary small">Local: {{ "%.2f"|format(row.local_median_rub) if row.local_median_rub is not none else '-' }}</div>
             <div class="text-secondary small">Float: {{ "%.2f"|format(row.float_peer_median_rub) if row.float_peer_median_rub is not none else '-' }}</div>
+            <div class="text-secondary small">Hist: {{ "%.2f"|format(row.historical_baseline_rub) if row.historical_baseline_rub is not none else '-' }}</div>
           </td>
           <td>
             <div>Local: {{ "%.1f"|format(row.local_discount_percent) ~ '%' if row.local_discount_percent is not none else '-' }}</div>
             <div class="text-secondary small">Float: {{ "%.1f"|format(row.float_peer_discount_percent) ~ '%' if row.float_peer_discount_percent is not none else '-' }}</div>
+            <div class="text-secondary small">Hist: {{ "%.1f"|format(row.historical_discount_percent) ~ '%' if row.historical_discount_percent is not none else '-' }}</div>
             <div class="text-secondary small">Z: {{ "%.2f"|format(row.robust_z) if row.robust_z is not none else '-' }}</div>
           </td>
           <td>{{ row.sample_size or '-' }}<div class="text-secondary small">nn {{ row.neighbor_count or 0 }}</div></td>
           <td>{{ row.currency_source }}<div class="text-secondary small">{{ row.currency_fetched_at or '-' }}</div></td>
-          <td class="text-secondary">{{ row.created_at }}</td>
+          <td class="text-secondary">{{ row.parsed_at or row.created_at }}</td>
           <td>
             <div class="table-actions">
+              <a class="btn btn-outline-secondary btn-sm" href="/candidates/{{ row.id }}"><i class="ti ti-list-details"></i>Details</a>
               {% if row.listing_url %}<a class="btn btn-outline-secondary btn-sm" target="_blank" href="/candidates/{{ row.id }}/open?target=listing"><i class="ti ti-brand-steam"></i>Steam</a>{% endif %}
               {% if row.search_url %}<a class="btn btn-outline-secondary btn-sm" target="_blank" href="/candidates/{{ row.id }}/open?target=search"><i class="ti ti-search"></i>Поиск</a>{% endif %}
               <form method="post" action="/candidates/{{ row.id }}/status" class="d-flex gap-1">

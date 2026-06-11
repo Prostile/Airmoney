@@ -40,6 +40,7 @@ def candidate_from_anomaly_result(
         historical_discount_percent=result.historical_discount_percent,
         robust_z=result.robust_z,
         float_bucket=result.float_bucket or "",
+        exact_item_match=result.exact_item_match,
         sample_size=result.sample_size,
         neighbor_count=result.neighbor_count,
         anomaly_reasons=reasons_text,

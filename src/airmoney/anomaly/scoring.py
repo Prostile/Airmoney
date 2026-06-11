@@ -53,7 +53,7 @@ def resolve_alert_level(
     roi: float | None,
     thresholds: AnomalyThresholdSettings,
 ) -> str:
-    if net_profit is None or net_profit < thresholds.min_net_profit_rub:
+    if net_profit is None or net_profit <= 0 or net_profit < thresholds.min_net_profit_rub:
         return "skip"
     if roi is None or roi < thresholds.min_roi_percent:
         return "skip"

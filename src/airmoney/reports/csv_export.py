@@ -39,6 +39,7 @@ def export_candidates_csv(path: str | Path, repo: Repository | None = None) -> P
         "robust_z",
         "float_value",
         "float_bucket",
+        "exact_item_match",
         "sample_size",
         "neighbor_count",
         "pattern",

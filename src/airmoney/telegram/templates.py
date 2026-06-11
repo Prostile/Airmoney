@@ -50,7 +50,14 @@ def resolve_display_discount(candidate: dict) -> float | None:
     return None
 
 
-def candidate_alert(candidate: dict, details_url: str, include_link: bool = True, include_pattern: bool = False) -> str:
+def candidate_alert(
+    candidate: dict,
+    details_url: str,
+    include_link: bool = True,
+    include_pattern: bool = False,
+    include_sample_stats: bool = False,
+    include_reasons: bool = False,
+) -> str:
     baseline_label, baseline_value = resolve_display_baseline(candidate)
     discount = resolve_display_discount(candidate)
     title = candidate.get("skin_name") or candidate.get("display_name") or "-"
@@ -70,6 +77,14 @@ def candidate_alert(candidate: dict, details_url: str, include_link: bool = True
     ]
     if include_pattern and candidate.get("pattern") not in {None, ""}:
         lines.append(f"Pattern: {candidate.get('pattern')}")
+    if include_sample_stats:
+        lines.append(
+            f"Sample: {candidate.get('sample_size') or 0} / nn {candidate.get('neighbor_count') or 0}"
+        )
+    if include_reasons:
+        reasons = _reason_lines(candidate)
+        if reasons:
+            lines.extend(["", "Reasons:", *reasons])
     if include_link:
         lines.extend(["", f"Link: {candidate.get('listing_url') or details_url}"])
     return "\n".join(lines)
@@ -114,3 +129,10 @@ def _to_float(value) -> float | None:
         return float(value)
     except Exception:
         return None
+
+
+def _reason_lines(candidate: dict) -> list[str]:
+    text = str(candidate.get("anomaly_reasons") or candidate.get("recommendation_reason") or "").strip()
+    if not text:
+        return []
+    return [f"- {part.strip()}" for part in text.split(";") if part.strip()]

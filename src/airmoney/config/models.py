@@ -494,6 +494,7 @@ class Candidate:
     historical_discount_percent: float | None = None
     robust_z: float | None = None
     float_bucket: str = ""
+    exact_item_match: bool = False
     sample_size: int = 0
     neighbor_count: int = 0
     anomaly_reasons: str = ""

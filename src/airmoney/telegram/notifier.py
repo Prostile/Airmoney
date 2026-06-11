@@ -88,6 +88,8 @@ class TelegramNotifier:
                     f"{self.site_url}/candidates",
                     include_link=alert_settings.include_link,
                     include_pattern=alert_settings.include_pattern,
+                    include_sample_stats=alert_settings.include_sample_stats,
+                    include_reasons=alert_settings.include_reasons,
                 )[: alert_settings.max_message_length]
             )
             self.repo.log_telegram_alert(candidate["id"], "sent" if ok else "error", error)

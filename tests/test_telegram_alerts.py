@@ -14,6 +14,9 @@ def candidate(level: str = "good") -> dict:
         "estimated_roi_percent": 46.9,
         "float_peer_discount_percent": 42.1,
         "anomaly_score": 88,
+        "sample_size": 8,
+        "neighbor_count": 5,
+        "anomaly_reasons": "local discount; float peer discount",
         "listing_url": "https://steamcommunity.com/market/listings/730/example",
     }
 
@@ -29,6 +32,20 @@ def test_compact_candidate_alert_contains_only_signal_fields():
     assert "Discount: -42%" in text
     assert "Score: 88" in text
     assert "raw" not in text.lower()
+
+
+def test_candidate_alert_can_include_optional_diagnostics():
+    text = candidate_alert(
+        candidate("critical"),
+        "https://example.test/candidates",
+        include_sample_stats=True,
+        include_reasons=True,
+    )
+
+    assert "Sample: 8 / nn 5" in text
+    assert "Reasons:" in text
+    assert "- local discount" in text
+    assert "- float peer discount" in text
 
 
 def test_batch_alert_uses_single_dashboard_link():

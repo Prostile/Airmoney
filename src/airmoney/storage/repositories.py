@@ -608,8 +608,8 @@ class Repository:
                     float_peer_median_rub, historical_baseline_rub,
                     local_discount_percent, float_peer_discount_percent,
                     historical_discount_percent, robust_z, float_bucket,
-                    sample_size, neighbor_count, anomaly_reasons, parsed_at,
-                    status, created_at, updated_at
+                    exact_item_match, sample_size, neighbor_count,
+                    anomaly_reasons, parsed_at, status, created_at, updated_at
                 )
                 VALUES (
                     :id, :listing_id, :rule_id, :buy_price_rub, :estimated_resale_price_rub,
@@ -620,8 +620,8 @@ class Repository:
                     :float_peer_median_rub, :historical_baseline_rub,
                     :local_discount_percent, :float_peer_discount_percent,
                     :historical_discount_percent, :robust_z, :float_bucket,
-                    :sample_size, :neighbor_count, :anomaly_reasons, :parsed_at,
-                    :status, :created_at, :updated_at
+                    :exact_item_match, :sample_size, :neighbor_count,
+                    :anomaly_reasons, :parsed_at, :status, :created_at, :updated_at
                 )
                 ON CONFLICT(listing_id) DO UPDATE SET
                     rule_id = excluded.rule_id,
@@ -646,6 +646,7 @@ class Repository:
                     historical_discount_percent = excluded.historical_discount_percent,
                     robust_z = excluded.robust_z,
                     float_bucket = excluded.float_bucket,
+                    exact_item_match = excluded.exact_item_match,
                     sample_size = excluded.sample_size,
                     neighbor_count = excluded.neighbor_count,
                     anomaly_reasons = excluded.anomaly_reasons,
@@ -705,7 +706,7 @@ class Repository:
         if souvenir_only:
             clauses.append("i.is_souvenir = 1")
         if exact_item_only:
-            clauses.append("c.analysis_mode = 'anomaly'")
+            clauses.append("c.exact_item_match = 1")
         if date_from:
             clauses.append("c.created_at >= ?")
             params.append(_date_start(date_from))
@@ -729,7 +730,8 @@ class Repository:
                 SELECT c.*,
                        ml.skin_name, ml.market_hash_name, ml.listing_url, ml.search_url,
                        ml.float_value, ml.pattern, ml.currency_source, ml.currency_fetched_at, ml.last_seen_at,
-                       i.id AS item_id, i.display_name, i.exterior,
+                       i.id AS item_id, i.display_name, i.exterior, i.rarity, i.quality,
+                       i.is_souvenir, i.is_stattrak,
                        col.id AS collection_id, col.name AS collection_name
                 FROM candidates c
                 JOIN market_listings ml ON ml.id = c.listing_id
@@ -757,7 +759,10 @@ class Repository:
                 SELECT c.*,
                        ml.skin_name, ml.market_hash_name, ml.listing_url, ml.search_url,
                        ml.float_value, ml.pattern, ml.currency_source, ml.currency_fetched_at,
-                       i.id AS item_id, i.display_name, i.exterior,
+                       ml.buy_price_original, ml.currency_original, ml.currency_rate,
+                       ml.raw_text, ml.first_seen_at, ml.last_seen_at, ml.parse_status,
+                       i.id AS item_id, i.display_name, i.exterior, i.rarity, i.quality,
+                       i.weapon_type, i.is_souvenir, i.is_stattrak,
                        col.id AS collection_id, col.name AS collection_name
                 FROM candidates c
                 JOIN market_listings ml ON ml.id = c.listing_id
@@ -832,6 +837,33 @@ class Repository:
                 (item_id,),
             ).fetchall()
         return {str(row["float_bucket"]): float(row["rolling_median_rub"]) for row in rows}
+
+    def list_market_baseline_rows(self, item_id: str) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM market_baseline
+                WHERE item_id = ?
+                ORDER BY float_bucket
+                """,
+                (item_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_market_snapshots(self, item_id: str, limit: int = 30) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM market_snapshot
+                WHERE item_id = ?
+                ORDER BY scan_time DESC, id DESC
+                LIMIT ?
+                """,
+                (item_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def save_market_snapshots(
         self,
@@ -1034,7 +1066,7 @@ class Repository:
                 LEFT JOIN telegram_alerts ta
                     ON ta.candidate_id = c.id AND ta.status = 'sent'
                 WHERE c.status = 'new'
-                  AND c.recommendation_level IN ('critical', 'good')
+                  AND c.recommendation_level IN ('critical', 'good', 'watch')
                   AND COALESCE(r.telegram_alert_enabled, 1) = 1
                   AND ta.id IS NULL
                 ORDER BY c.recommendation_score DESC, c.created_at DESC

@@ -140,6 +140,7 @@ def test_anomaly_analyzer_result_uses_real_profit_and_reasons():
     assert result.net_profit_rub is not None
     assert result.roi_percent is not None
     assert result.alert_level in {"critical", "good", "watch"}
+    assert result.exact_item_match is True
     assert any("медианы" in reason for reason in result.reasons)
 
 
@@ -153,6 +154,40 @@ def test_target_resale_price_override_in_analyzer():
     result = analyze_listing(sample[0], sample, {"enabled": True}, {"target_resale_price_rub": 1000}, settings)
 
     assert result.fair_price_rub == 1000
+
+
+def test_rule_min_profit_and_roi_override_anomaly_thresholds():
+    settings = ParserSettings()
+    anomaly = settings.anomaly_settings
+    anomaly.sample.min_listings = 5
+    anomaly.nearest_neighbors.min_neighbors = 4
+    settings.set_anomaly_settings(anomaly)
+    sample = [
+        listing(472, 0.0115),
+        listing(690, 0.0109),
+        listing(797, 0.0121),
+        listing(816, 0.0130),
+        listing(869, 0.0140),
+        listing(916, 0.02),
+    ]
+
+    skipped = analyze_listing(
+        sample[0],
+        sample,
+        {"market_hash_name": sample[0].expected_market_hash_name, "enabled": True},
+        {"enabled": True, "target_resale_price_rub": 1000, "min_profit_rub": 500, "min_roi_percent": 8},
+        settings,
+    )
+    accepted = analyze_listing(
+        sample[0],
+        sample,
+        {"market_hash_name": sample[0].expected_market_hash_name, "enabled": True},
+        {"enabled": True, "target_resale_price_rub": 1000, "min_profit_rub": 100, "min_roi_percent": 8},
+        settings,
+    )
+
+    assert skipped.alert_level == "skip"
+    assert accepted.alert_level in {"critical", "good", "watch"}
 
 
 def test_target_float_and_priority_increase_anomaly_score():

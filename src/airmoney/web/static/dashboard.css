@@ -158,6 +158,16 @@ body.page-leaving .page-wrapper {
   line-height: 1.45;
 }
 
+.raw-card-text {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
 .scan-progress {
   position: fixed;
   right: 1rem;

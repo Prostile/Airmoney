@@ -562,6 +562,30 @@ def create_app(repo: Repository | None = None) -> FastAPI:
             },
         )
 
+    @app.get("/candidates/{candidate_id}", response_class=HTMLResponse)
+    def candidate_details_page(
+        request: Request,
+        candidate_id: str,
+        _: str = Depends(require_auth),
+    ):
+        candidate = repository.get_candidate_details(candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        return templates.TemplateResponse(
+            request,
+            "candidate_detail.html",
+            {
+                "request": request,
+                "active": "candidates",
+                "row": candidate,
+                "reasons": _split_reasons(
+                    candidate.get("anomaly_reasons") or candidate.get("recommendation_reason") or ""
+                ),
+                "market_baselines": repository.list_market_baseline_rows(candidate["item_id"]),
+                "market_snapshots": repository.list_market_snapshots(candidate["item_id"], limit=30),
+            },
+        )
+
     @app.post("/candidates/{candidate_id}/status")
     async def update_candidate(request: Request, candidate_id: str, _: str = Depends(require_auth)) -> RedirectResponse:
         form = await _form(request)
@@ -761,6 +785,10 @@ def _extract_exterior(market_hash_name: str) -> str:
         if market_hash_name.endswith(f"({exterior})"):
             return exterior
     return ""
+
+
+def _split_reasons(value: str) -> list[str]:
+    return [part.strip() for part in str(value or "").split(";") if part.strip()]
 
 
 app = create_app()

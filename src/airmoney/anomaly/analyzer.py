@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from airmoney.anomaly.baselines import (
@@ -9,6 +9,7 @@ from airmoney.anomaly.baselines import (
     calculate_float_peer_baseline,
     calculate_local_baseline,
 )
+from airmoney.anomaly.matching import is_exact_item_match
 from airmoney.anomaly.models import AnomalyResult, ParsedListing
 from airmoney.anomaly.scoring import (
     calculate_anomaly_score,
@@ -16,7 +17,7 @@ from airmoney.anomaly.scoring import (
     estimate_fair_price,
     resolve_alert_level,
 )
-from airmoney.config.models import AnomalySettings, ParserSettings
+from airmoney.config.models import AnomalySettings, AnomalyThresholdSettings, ParserSettings
 from airmoney.steam.extractor import value_in_ranges
 
 
@@ -56,8 +57,13 @@ def analyze_listing(
     anomaly_settings = anomaly_settings or settings.anomaly_settings
     reasons: list[str] = []
     hard_skip_reasons = rule_filter_reasons(candidate, item, rule)
+    thresholds = _thresholds_for_rule(anomaly_settings, rule)
+    exact_item_match = is_exact_item_match(
+        candidate,
+        str(item.get("market_hash_name") or candidate.expected_market_hash_name),
+    )
 
-    sample_min = max(5, anomaly_settings.sample.min_listings)
+    sample_min = _baseline_min_samples(anomaly_settings)
     local = calculate_local_baseline(
         candidate,
         listings,
@@ -121,7 +127,7 @@ def analyze_listing(
         score = min(100.0, round(score + priority_boost, 2))
         reasons.append(f"priority повышает score на {priority_boost:g}")
 
-    level = resolve_alert_level(score, net_profit, roi, anomaly_settings.thresholds)
+    level = resolve_alert_level(score, net_profit, roi, thresholds)
 
     if hard_skip_reasons:
         level = "skip"
@@ -147,10 +153,10 @@ def analyze_listing(
         reasons.append(f"заметка: {notes}")
 
     passes_discount = (
-        (local.discount_percent is not None and local.discount_percent >= anomaly_settings.thresholds.min_local_discount_percent)
+        (local.discount_percent is not None and local.discount_percent >= thresholds.min_local_discount_percent)
         or (
             float_peer_discount is not None
-            and float_peer_discount >= anomaly_settings.thresholds.min_float_peer_discount_percent
+            and float_peer_discount >= thresholds.min_float_peer_discount_percent
         )
     )
     if not hard_skip_reasons and not passes_discount and level != "skip":
@@ -177,6 +183,7 @@ def analyze_listing(
         reasons=reasons,
         robust_z=local.robust_z,
         float_bucket=bucket,
+        exact_item_match=exact_item_match,
         sample_size=len(listings),
         neighbor_count=neighbor_count,
     )
@@ -231,6 +238,28 @@ def _optional_int(row: dict[str, Any] | None, key: str) -> int | None:
         return int(value)
     except Exception:
         return None
+
+
+def _baseline_min_samples(anomaly_settings: AnomalySettings) -> int:
+    if anomaly_settings.sample.exclude_candidate_from_baseline:
+        return max(5, anomaly_settings.sample.min_listings - 1)
+    return max(5, anomaly_settings.sample.min_listings)
+
+
+def _thresholds_for_rule(
+    anomaly_settings: AnomalySettings,
+    rule: dict[str, Any] | None,
+) -> AnomalyThresholdSettings:
+    thresholds = anomaly_settings.thresholds
+    min_profit = _optional_float(rule, "min_profit_rub")
+    min_roi = _optional_float(rule, "min_roi_percent")
+    if min_profit is None and min_roi is None:
+        return thresholds
+    return replace(
+        thresholds,
+        min_net_profit_rub=min_profit if min_profit is not None else thresholds.min_net_profit_rub,
+        min_roi_percent=min_roi if min_roi is not None else thresholds.min_roi_percent,
+    )
 
 
 def _has_target_float(rule: dict[str, Any] | None) -> bool:

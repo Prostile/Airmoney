@@ -55,6 +55,7 @@ class AnomalyResult:
     reasons: list[str] = field(default_factory=list)
     robust_z: float | None = None
     float_bucket: str | None = None
+    exact_item_match: bool = False
     sample_size: int = 0
     neighbor_count: int = 0
     analysis_mode: str = "anomaly"
@@ -65,6 +66,7 @@ def parsed_listing_from_market_listing(
     item: dict[str, Any],
 ) -> ParsedListing:
     title = listing.skin_name or listing.market_hash_name or str(item.get("market_hash_name") or "")
+    title_lower = title.lower()
     return ParsedListing(
         item_id=listing.item_definition_id,
         expected_market_hash_name=str(item.get("market_hash_name") or listing.market_hash_name or title),
@@ -74,8 +76,8 @@ def parsed_listing_from_market_listing(
         price_rub=listing.buy_price_rub,
         wear_rating=listing.float_value,
         pattern_template=listing.pattern,
-        is_souvenir=bool(item.get("is_souvenir")),
-        is_stattrak=bool(item.get("is_stattrak")),
+        is_souvenir=title_lower.startswith("souvenir ") or bool(item.get("is_souvenir")),
+        is_stattrak="stattrak" in title_lower or "stat trak" in title_lower or bool(item.get("is_stattrak")),
         exterior=str(item.get("exterior") or "") or None,
         parsed_at=utc_now(),
         listing_id=listing.id,

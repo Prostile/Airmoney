@@ -1,0 +1,162 @@
+{% extends "layout.html" %}
+{% block title %}Airmoney - Candidate{% endblock %}
+{% block content %}
+<section class="page-title-row">
+  <div>
+    <div class="page-pretitle">Candidate details</div>
+    <h1 class="page-title">{{ row.skin_name }}</h1>
+    <div class="text-secondary mt-1">{{ row.collection_name }} / {{ row.display_name }} {{ row.exterior }}</div>
+  </div>
+  <div class="toolbar">
+    <a class="btn btn-outline-secondary" href="/candidates"><i class="ti ti-arrow-left"></i>Back</a>
+    {% if row.listing_url %}<a class="btn btn-outline-secondary" target="_blank" href="/candidates/{{ row.id }}/open?target=listing"><i class="ti ti-brand-steam"></i>Steam</a>{% endif %}
+    {% if row.search_url %}<a class="btn btn-outline-secondary" target="_blank" href="/candidates/{{ row.id }}/open?target=search"><i class="ti ti-search"></i>Search</a>{% endif %}
+  </div>
+</section>
+
+<div class="row row-cards">
+  <div class="col-12 col-xl-7">
+    <section class="card h-100">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-chart-dots me-2"></i>Anomaly analysis</h2></div>
+      <div class="card-body">
+        <div class="row row-gap-3">
+          <div class="col-6 col-md-3">
+            <div class="text-secondary small">Level</div>
+            <span class="badge badge-level-{{ row.recommendation_level }}">{{ row.recommendation_level }}</span>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-secondary small">Score</div>
+            <div class="h3 mb-0">{{ "%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score) }}</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-secondary small">Profit</div>
+            <div class="{{ 'profit-positive' if row.estimated_profit_rub > 0 else 'profit-negative' }}">{{ "%.2f"|format(row.estimated_profit_rub) }}</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-secondary small">ROI</div>
+            <div>{{ "%.2f"|format(row.estimated_roi_percent) }}%</div>
+          </div>
+        </div>
+
+        <div class="table-responsive table-responsive-medium mt-4">
+          <table class="table table-sm">
+            <tbody>
+              <tr><th>Buy price</th><td>{{ "%.2f"|format(row.buy_price_rub) }}</td><th>Fair price</th><td>{{ "%.2f"|format(row.fair_price_rub) if row.fair_price_rub is not none else "-" }}</td></tr>
+              <tr><th>Net resale</th><td>{{ "%.2f"|format(row.estimated_net_resale_rub) }}</td><th>Market fee</th><td>{{ "%.2f"|format(row.market_fee_percent) }}%</td></tr>
+              <tr><th>Local median</th><td>{{ "%.2f"|format(row.local_median_rub) if row.local_median_rub is not none else "-" }}</td><th>Local discount</th><td>{{ "%.1f"|format(row.local_discount_percent) ~ "%" if row.local_discount_percent is not none else "-" }}</td></tr>
+              <tr><th>Float median</th><td>{{ "%.2f"|format(row.float_peer_median_rub) if row.float_peer_median_rub is not none else "-" }}</td><th>Float discount</th><td>{{ "%.1f"|format(row.float_peer_discount_percent) ~ "%" if row.float_peer_discount_percent is not none else "-" }}</td></tr>
+              <tr><th>Historical baseline</th><td>{{ "%.2f"|format(row.historical_baseline_rub) if row.historical_baseline_rub is not none else "-" }}</td><th>Historical discount</th><td>{{ "%.1f"|format(row.historical_discount_percent) ~ "%" if row.historical_discount_percent is not none else "-" }}</td></tr>
+              <tr><th>Sample size</th><td>{{ row.sample_size or 0 }}</td><th>Neighbors</th><td>{{ row.neighbor_count or 0 }}</td></tr>
+              <tr><th>MAD robust z</th><td>{{ "%.4f"|format(row.robust_z) if row.robust_z is not none else "-" }}</td><th>Exact item match</th><td>{{ "yes" if row.exact_item_match else "no" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xl-5">
+    <section class="card h-100">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-info-circle me-2"></i>Listing</h2></div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <tbody>
+              <tr><th>Market hash</th><td>{{ row.market_hash_name }}</td></tr>
+              <tr><th>Collection</th><td>{{ row.collection_name }}</td></tr>
+              <tr><th>Rarity</th><td>{{ row.rarity or "-" }}</td></tr>
+              <tr><th>Quality</th><td>{{ row.quality or "-" }}</td></tr>
+              <tr><th>Exterior</th><td>{{ row.exterior or "-" }}</td></tr>
+              <tr><th>Souvenir</th><td>{{ "yes" if row.is_souvenir else "no" }}</td></tr>
+              <tr><th>StatTrak</th><td>{{ "yes" if row.is_stattrak else "no" }}</td></tr>
+              <tr><th>Float</th><td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else "-" }}</td></tr>
+              <tr><th>Float bucket</th><td>{{ row.float_bucket or "-" }}</td></tr>
+              <tr><th>Pattern</th><td>{{ row.pattern if row.pattern is not none else "-" }}</td></tr>
+              <tr><th>Parsed at</th><td>{{ row.parsed_at or row.created_at }}</td></tr>
+              <tr><th>Currency</th><td>{{ row.currency_original or "RUB" }} / {{ row.currency_source or "-" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <section class="card h-100">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-list-check me-2"></i>Reasons</h2></div>
+      <div class="card-body">
+        {% if reasons %}
+        <ul class="mb-0">
+          {% for reason in reasons %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-secondary">No reasons recorded.</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <section class="card h-100">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-database me-2"></i>Historical baselines</h2></div>
+      <div class="table-responsive">
+        <table class="table table-sm card-table">
+          <thead><tr><th>Bucket</th><th>Median</th><th>Q25</th><th>Floor</th><th>Samples</th><th>Updated</th></tr></thead>
+          <tbody>
+            {% for baseline in market_baselines %}
+            <tr>
+              <td>{{ baseline.float_bucket }}</td>
+              <td>{{ "%.2f"|format(baseline.rolling_median_rub) if baseline.rolling_median_rub is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(baseline.rolling_q25_rub) if baseline.rolling_q25_rub is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(baseline.rolling_floor_rub) if baseline.rolling_floor_rub is not none else "-" }}</td>
+              <td>{{ baseline.sample_count }}</td>
+              <td class="text-secondary">{{ baseline.updated_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-secondary">No historical baselines yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12">
+    <section class="card">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-history me-2"></i>Recent market snapshots</h2></div>
+      <div class="table-responsive">
+        <table class="table table-sm card-table">
+          <thead><tr><th>Scan time</th><th>Bucket</th><th>Samples</th><th>Floor</th><th>Q10</th><th>Q25</th><th>Median</th><th>Q75</th></tr></thead>
+          <tbody>
+            {% for snapshot in market_snapshots %}
+            <tr>
+              <td class="text-secondary">{{ snapshot.scan_time }}</td>
+              <td>{{ snapshot.float_bucket }}</td>
+              <td>{{ snapshot.sample_size }}</td>
+              <td>{{ "%.2f"|format(snapshot.floor_price_rub) if snapshot.floor_price_rub is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(snapshot.q10_price_rub) if snapshot.q10_price_rub is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(snapshot.q25_price_rub) if snapshot.q25_price_rub is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(snapshot.median_price_rub) if snapshot.median_price_rub is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(snapshot.q75_price_rub) if snapshot.q75_price_rub is not none else "-" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-secondary">No market snapshots yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12">
+    <section class="card">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-file-text me-2"></i>Raw card text</h2></div>
+      <div class="card-body">
+        <pre class="raw-card-text mb-0">{{ row.raw_text or "" }}</pre>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
