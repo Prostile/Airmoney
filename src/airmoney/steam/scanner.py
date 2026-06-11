@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -91,7 +92,10 @@ def scan_once(
         raise RuntimeError("Для сканирования нужен playwright. Установи зависимости из requirements.txt.") from error
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=settings.headless)
+        browser = playwright.chromium.launch(
+            headless=settings.headless,
+            proxy=_browser_proxy_config(),
+        )
         context = browser.new_context(viewport={"width": 1600, "height": 1000})
         context.route("**/*", block_unneeded_requests)
         page = context.new_page()
@@ -191,6 +195,13 @@ def _emit_progress(progress: ProgressCallback | None, **payload: Any) -> None:
     if progress is None:
         return
     progress(**payload)
+
+
+def _browser_proxy_config() -> dict[str, str] | None:
+    server = os.getenv("AIRMONEY_BROWSER_PROXY", "").strip()
+    if not server:
+        return None
+    return {"server": server}
 
 
 def _empty_targets_message(summary: dict[str, int]) -> str:

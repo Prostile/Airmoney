@@ -45,7 +45,7 @@ TELEGRAM_CHAT_ID=
 Запуск:
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 ```
 
 Compose создаёт VPN-gateway контейнер `container-1`, запускает приложение в контейнере `airmoney-app` через сетевой namespace gateway, подключает `container-1` к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
@@ -57,6 +57,7 @@ cp vpn/sing-box.example.json vpn/sing-box.json
 ```
 
 В `vpn/sing-box.json` укажи реальные `server`, `uuid`, `flow`, `packet_encoding` и TLS-параметры. Этот файл содержит секреты и игнорируется git.
+Проверь, что inbound `mixed` на `127.0.0.1:10808` включён: приложение использует его как локальный proxy для Python/Telegram/валют и Playwright.
 
 Если nginx тоже запущен в Docker, подключи nginx-контейнер к этой сети:
 
