@@ -48,7 +48,7 @@ TELEGRAM_CHAT_ID=
 docker compose up -d --build --force-recreate
 ```
 
-Compose создаёт контейнер приложения `container-1` и VPN/proxy контейнер `vpn-gateway`, подключает их к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Nginx должен ходить на `http://container-1:8000`, а исходящий HTTP/HTTPS-трафик приложения идёт через `vpn-gateway:10808`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
+Compose создаёт контейнер приложения `container-1` и VPN/proxy контейнер `vpn-gateway`, подключает их к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Исходящий HTTP/HTTPS-трафик приложения идёт через `vpn-gateway:10808`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
 
 Перед первым запуском Docker-режима подготовь VPN-конфиг:
 
@@ -59,13 +59,15 @@ cp vpn/sing-box.example.json vpn/sing-box.json
 В `vpn/sing-box.json` укажи реальные `server`, `uuid`, `flow`, `packet_encoding` и TLS-параметры. Этот файл содержит секреты и игнорируется git.
 Проверь, что inbound `mixed` на `0.0.0.0:10808` включён: приложение использует его как proxy для Python/Telegram/валют и Playwright.
 
-Если nginx тоже запущен в Docker, подключи nginx-контейнер к этой сети:
+Nginx должен быть запущен в Docker и подключён к сети `airmoney_net`:
 
 ```bash
 docker network connect airmoney_net nginx
 ```
 
-Минимальный upstream для nginx:
+Если контейнер nginx называется иначе, замени `nginx` на его имя из `docker ps`.
+
+Минимальный upstream:
 
 ```nginx
 location / {

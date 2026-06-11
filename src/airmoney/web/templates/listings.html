@@ -1,58 +1,81 @@
 {% extends "layout.html" %}
+{% block title %}Airmoney - Лоты{% endblock %}
 {% block content %}
-<section class="page-head">
+<section class="page-title-row">
   <div>
-    <h1>Лоты</h1>
-    <p>Все найденные карточки Steam Market, включая те, которые не прошли в кандидаты.</p>
+    <div class="page-pretitle">Steam Market</div>
+    <h1 class="page-title">Лоты</h1>
+    <div class="text-secondary mt-1">Все найденные карточки Steam Market, включая те, которые не прошли в кандидаты.</div>
   </div>
 </section>
 
-<form class="filters" method="get" action="/listings">
-  <label class="check"><input type="checkbox" name="active_only" value="true" {% if filters.active_only %}checked{% endif %}> только активные</label>
-  <select name="collection_id">
-    <option value="">Все коллекции</option>
-    {% for collection in collections %}
-    <option value="{{ collection.id }}" {% if filters.collection_id == collection.id %}selected{% endif %}>{{ collection.name }}</option>
-    {% endfor %}
-  </select>
-  <button type="submit">Применить</button>
-</form>
+<section class="card filter-card mb-4">
+  <form method="get" action="/listings" hx-get="/listings" hx-target=".container-xl" hx-select=".container-xl" hx-swap="outerHTML" hx-push-url="true">
+    <div class="card-body">
+      <div class="row align-items-end">
+        <div class="col-12 col-md-3">
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="active_only" value="true" {% if filters.active_only %}checked{% endif %}>
+            <span class="form-check-label">Только активные</span>
+          </label>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Коллекция</label>
+          <select class="form-select" name="collection_id">
+            <option value="">Все коллекции</option>
+            {% for collection in collections %}
+            <option value="{{ collection.id }}" {% if filters.collection_id == collection.id %}selected{% endif %}>{{ collection.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-auto">
+          <button class="btn btn-primary" type="submit"><i class="ti ti-filter"></i>Применить</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</section>
 
-<div class="table-wrap wide">
-  <table>
-    <thead>
-      <tr>
-        <th>Активен</th>
-        <th>Скин</th>
-        <th>Коллекция</th>
-        <th>Покупка</th>
-        <th>Оригинал</th>
-        <th>Float</th>
-        <th>Pattern</th>
-        <th>Курс</th>
-        <th>Последний раз</th>
-        <th>Ссылки</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in listings %}
-      <tr>
-        <td>{{ 'да' if row.is_active else 'нет' }}</td>
-        <td>{{ row.skin_name }}<div class="muted">{{ row.market_hash_name }}</div></td>
-        <td>{{ row.collection_name }}</td>
-        <td>{{ "%.2f"|format(row.buy_price_rub) }} руб.</td>
-        <td>{{ row.buy_price_original or '-' }} {{ row.currency_original }}</td>
-        <td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else '-' }}</td>
-        <td>{{ row.pattern if row.pattern is not none else '-' }}</td>
-        <td>{{ row.currency_source }}<div class="muted">{{ row.currency_fetched_at or '-' }}</div></td>
-        <td>{{ row.last_seen_at }}</td>
-        <td>
-          {% if row.listing_url %}<a target="_blank" href="{{ row.listing_url }}">Steam</a>{% endif %}
-          {% if row.search_url %}<a target="_blank" href="{{ row.search_url }}">Поиск</a>{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<section class="card">
+  <div class="card-header"><h2 class="card-title"><i class="ti ti-tags me-2"></i>Найденные лоты</h2></div>
+  <div class="table-responsive table-responsive-wide">
+    <table class="table table-vcenter card-table">
+      <thead>
+        <tr>
+          <th>Активен</th>
+          <th>Скин</th>
+          <th>Коллекция</th>
+          <th>Покупка</th>
+          <th>Оригинал</th>
+          <th>Float</th>
+          <th>Pattern</th>
+          <th>Курс</th>
+          <th>Последний раз</th>
+          <th class="w-1">Ссылки</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in listings %}
+        <tr>
+          <td><span class="badge {{ 'bg-success-lt' if row.is_active else 'bg-secondary-lt' }}">{{ 'да' if row.is_active else 'нет' }}</span></td>
+          <td class="fw-semibold">{{ row.skin_name }}<div class="text-secondary small">{{ row.market_hash_name }}</div></td>
+          <td class="text-secondary">{{ row.collection_name }}</td>
+          <td>{{ "%.2f"|format(row.buy_price_rub) }} руб.</td>
+          <td>{{ row.buy_price_original or '-' }} {{ row.currency_original }}</td>
+          <td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else '-' }}</td>
+          <td>{{ row.pattern if row.pattern is not none else '-' }}</td>
+          <td>{{ row.currency_source }}<div class="text-secondary small">{{ row.currency_fetched_at or '-' }}</div></td>
+          <td class="text-secondary">{{ row.last_seen_at }}</td>
+          <td>
+            <div class="table-actions">
+              {% if row.listing_url %}<a class="btn btn-outline-secondary btn-sm" target="_blank" href="{{ row.listing_url }}"><i class="ti ti-brand-steam"></i>Steam</a>{% endif %}
+              {% if row.search_url %}<a class="btn btn-outline-secondary btn-sm" target="_blank" href="{{ row.search_url }}"><i class="ti ti-search"></i>Поиск</a>{% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

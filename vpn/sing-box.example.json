@@ -26,8 +26,7 @@
         ]
       }
     ],
-    "final": "remote_dns",
-    "independent_cache": true
+    "final": "remote_dns"
   },
   "inbounds": [
     {

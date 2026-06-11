@@ -1,0 +1,36 @@
+{% set nav_items = [
+  ("dashboard", "/dashboard", "ti ti-layout-dashboard", "Dashboard"),
+  ("settings", "/settings", "ti ti-adjustments", "Настройки"),
+  ("collections", "/collections", "ti ti-folders", "Коллекции"),
+  ("items", "/items", "ti ti-list-details", "Предметы"),
+  ("listings", "/listings", "ti ti-tags", "Лоты"),
+  ("candidates", "/candidates", "ti ti-target-arrow", "Кандидаты"),
+  ("scan_runs", "/scan-runs", "ti ti-activity", "Сканы"),
+  ("rule_stats", "/rule-stats", "ti ti-chart-dots", "Правила"),
+  ("import_export", "/import-export", "ti ti-transfer", "Импорт/экспорт"),
+] %}
+<aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+  <div class="container-fluid">
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu" aria-controls="sidebar-menu" aria-expanded="false" aria-label="Открыть меню">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <h1 class="navbar-brand navbar-brand-autodark">
+      <a href="/dashboard" aria-label="Airmoney dashboard">
+        <span class="brand-mark"><i class="ti ti-brand-steam"></i></span>
+        <span>Airmoney</span>
+      </a>
+    </h1>
+    <div class="collapse navbar-collapse" id="sidebar-menu">
+      <ul class="navbar-nav pt-lg-3">
+        {% for key, href, icon, label in nav_items %}
+        <li class="nav-item{% if active == key %} active{% endif %}">
+          <a class="nav-link" href="{{ href }}">
+            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="{{ icon }}"></i></span>
+            <span class="nav-link-title">{{ label }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</aside>

@@ -1,29 +1,45 @@
 {% extends "layout.html" %}
+{% block title %}Airmoney - Импорт/экспорт{% endblock %}
 {% block content %}
-<section class="page-head">
+<section class="page-title-row">
   <div>
-    <h1>Импорт/экспорт</h1>
-    <p>Невалидный конфиг не применяется к базе.</p>
+    <div class="page-pretitle">Конфиг</div>
+    <h1 class="page-title">Импорт/экспорт</h1>
+    <div class="text-secondary mt-1">Невалидный конфиг не применяется к базе.</div>
   </div>
-  <a class="button-link" href="/export-config">Скачать YAML</a>
+  <div class="toolbar">
+    <a class="btn btn-primary" href="/export-config"><i class="ti ti-download"></i>Скачать YAML</a>
+  </div>
 </section>
 
 {% if errors %}
-<section class="errors">
-  <h2>Ошибки импорта</h2>
-  <ul>
-    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
-  </ul>
+<section class="alert alert-danger" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-alert-circle icon alert-icon"></i></div>
+    <div>
+      <strong>Ошибки импорта</strong>
+      <ul class="mb-0 mt-2">
+        {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
 </section>
 {% endif %}
 
-<form method="post" action="/import-export">
-  <textarea name="config_text" spellcheck="false">{{ config_text }}</textarea>
-  <div class="form-actions">
-    <button type="submit" name="action" value="validate" class="secondary">Проверить</button>
-    <button type="submit" name="action" value="import">Импортировать</button>
-    <button type="submit" name="action" value="catalog_validate" class="secondary">Проверить каталог</button>
-    <button type="submit" name="action" value="catalog_import">Добавить каталог</button>
-  </div>
-</form>
+<section class="card">
+  <div class="card-header"><h2 class="card-title"><i class="ti ti-code me-2"></i>YAML-конфигурация</h2></div>
+  <form method="post" action="/import-export">
+    <div class="card-body">
+      <textarea class="form-control yaml-editor" name="config_text" spellcheck="false">{{ config_text }}</textarea>
+    </div>
+    <div class="card-footer">
+      <div class="toolbar justify-content-start">
+        <button class="btn btn-outline-secondary" type="submit" name="action" value="validate"><i class="ti ti-checkup-list"></i>Проверить</button>
+        <button class="btn btn-primary" type="submit" name="action" value="import"><i class="ti ti-upload"></i>Импортировать</button>
+        <button class="btn btn-outline-secondary" type="submit" name="action" value="catalog_validate"><i class="ti ti-list-check"></i>Проверить каталог</button>
+        <button class="btn btn-outline-primary" type="submit" name="action" value="catalog_import"><i class="ti ti-folder-plus"></i>Добавить каталог</button>
+      </div>
+    </div>
+  </form>
+</section>
 {% endblock %}

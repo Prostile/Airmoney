@@ -1,68 +1,78 @@
 {% extends "layout.html" %}
+{% block title %}Airmoney - Сканы{% endblock %}
 {% block content %}
-<section class="page-head">
+<section class="page-title-row">
   <div>
-    <h1>Запуски сканера</h1>
-    <p>История ручных, CLI и мониторинговых запусков.</p>
+    <div class="page-pretitle">История</div>
+    <h1 class="page-title">Запуски сканера</h1>
+    <div class="text-secondary mt-1">История ручных, CLI и мониторинговых запусков.</div>
   </div>
 </section>
 
-<section class="metrics">
-  <div class="metric"><span>Всего коллекций</span><strong>{{ scan_summary.total_collections }}</strong></div>
-  <div class="metric"><span>Включено коллекций</span><strong>{{ scan_summary.enabled_collections }}</strong></div>
-  <div class="metric"><span>Всего предметов</span><strong>{{ scan_summary.total_items }}</strong></div>
-  <div class="metric"><span>Включено предметов</span><strong>{{ scan_summary.enabled_items }}</strong></div>
-  <div class="metric"><span>Целей скана</span><strong>{{ scan_summary.scan_targets }}</strong></div>
-  <div class="metric"><span>Блокирует коллекция</span><strong>{{ scan_summary.items_blocked_by_disabled_collection }}</strong></div>
+<section class="row row-cards mb-4">
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Всего коллекций</div><div class="h1 mb-0">{{ scan_summary.total_collections }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Включено коллекций</div><div class="h1 mb-0">{{ scan_summary.enabled_collections }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Всего предметов</div><div class="h1 mb-0">{{ scan_summary.total_items }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Включено предметов</div><div class="h1 mb-0">{{ scan_summary.enabled_items }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Целей скана</div><div class="h1 mb-0">{{ scan_summary.scan_targets }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Блокирует коллекция</div><div class="h1 mb-0">{{ scan_summary.items_blocked_by_disabled_collection }}</div></div></div></div>
 </section>
 
 {% if scan_summary.scan_targets == 0 %}
-<div class="notice warning">
-  <strong>Текущая очередь скана пуста.</strong>
-  {% if scan_summary.enabled_collections == 0 %}
-    Включи хотя бы одну коллекцию на странице <a href="/collections">Коллекции</a>.
-  {% elif scan_summary.enabled_items == 0 %}
-    Включи хотя бы один предмет на странице <a href="/items">Предметы</a>.
-  {% else %}
-    Проверь включение коллекций и предметов.
-  {% endif %}
+<div class="alert alert-warning" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-alert-triangle icon alert-icon"></i></div>
+    <div>
+      <strong>Текущая очередь скана пуста.</strong>
+      {% if scan_summary.enabled_collections == 0 %}
+        Включи хотя бы одну коллекцию на странице <a href="/collections">Коллекции</a>.
+      {% elif scan_summary.enabled_items == 0 %}
+        Включи хотя бы один предмет на странице <a href="/items">Предметы</a>.
+      {% else %}
+        Проверь включение коллекций и предметов.
+      {% endif %}
+    </div>
+  </div>
 </div>
 {% endif %}
 
-<div class="table-wrap wide">
-  <table>
-    <thead>
-      <tr>
-        <th>Статус</th>
-        <th>Источник</th>
-        <th>Коллекция</th>
-        <th>Предмет</th>
-        <th>Начало</th>
-        <th>Конец</th>
-        <th>Предметов</th>
-        <th>Лотов</th>
-        <th>Кандидатов</th>
-        <th>Алертов</th>
-        <th>Ошибка</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for run in scan_runs %}
-      <tr>
-        <td>{{ run.status }}</td>
-        <td>{{ run.trigger }}</td>
-        <td>{{ run.collection_id or '-' }}</td>
-        <td>{{ run.item_id or '-' }}</td>
-        <td>{{ run.started_at }}</td>
-        <td>{{ run.finished_at or '-' }}</td>
-        <td>{{ run.scanned_items }}</td>
-        <td>{{ run.listings_saved }}</td>
-        <td>{{ run.candidates_saved }}</td>
-        <td>{{ run.alerts_sent }}</td>
-        <td class="muted">{{ run.error }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<section class="card">
+  <div class="card-header"><h2 class="card-title"><i class="ti ti-history me-2"></i>История запусков</h2></div>
+  <div class="table-responsive table-responsive-wide">
+    <table class="table table-vcenter card-table">
+      <thead>
+        <tr>
+          <th>Статус</th>
+          <th>Источник</th>
+          <th>Коллекция</th>
+          <th>Предмет</th>
+          <th>Начало</th>
+          <th>Конец</th>
+          <th>Предметов</th>
+          <th>Лотов</th>
+          <th>Кандидатов</th>
+          <th>Алертов</th>
+          <th>Ошибка</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in scan_runs %}
+        <tr>
+          <td><span class="badge bg-secondary-lt">{{ run.status }}</span></td>
+          <td>{{ run.trigger }}</td>
+          <td>{{ run.collection_id or '-' }}</td>
+          <td>{{ run.item_id or '-' }}</td>
+          <td>{{ run.started_at }}</td>
+          <td>{{ run.finished_at or '-' }}</td>
+          <td>{{ run.scanned_items }}</td>
+          <td>{{ run.listings_saved }}</td>
+          <td>{{ run.candidates_saved }}</td>
+          <td>{{ run.alerts_sent }}</td>
+          <td class="text-secondary">{{ run.error }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

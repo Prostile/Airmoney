@@ -1,57 +1,91 @@
 {% extends "layout.html" %}
+{% block title %}Airmoney - Коллекции{% endblock %}
 {% block content %}
-<section class="page-head">
+<section class="page-title-row">
   <div>
-    <h1>Коллекции</h1>
-    <p>Включай коллекции, из которых формируется рабочий список предметов.</p>
+    <div class="page-pretitle">Каталог</div>
+    <h1 class="page-title">Коллекции</h1>
+    <div class="text-secondary mt-1">Включай коллекции, из которых формируется рабочий список предметов.</div>
   </div>
-  <a class="button-link secondary" href="/import-export">Импорт</a>
+  <div class="toolbar">
+    <a class="btn btn-outline-secondary" href="/import-export"><i class="ti ti-upload"></i>Импорт</a>
+  </div>
 </section>
 
-<form class="inline-form" method="post" action="/collections">
-  <input name="id" placeholder="id (опционально)">
-  <input name="name" placeholder="Название коллекции" required>
-  <input name="steam_collection_url" placeholder="Steam URL">
-  <label class="check"><input type="checkbox" name="enabled" checked> включена</label>
-  <button type="submit">Добавить</button>
-</form>
+<section class="card form-card mb-4">
+  <div class="card-header"><h2 class="card-title"><i class="ti ti-folder-plus me-2"></i>Добавить коллекцию</h2></div>
+  <form method="post" action="/collections">
+    <div class="card-body">
+      <div class="row">
+        <div class="col-12 col-md-3">
+          <label class="form-label">ID</label>
+          <input class="form-control" name="id" placeholder="Опционально">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Название</label>
+          <input class="form-control" name="name" placeholder="Active Drop 2026" required>
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Steam URL</label>
+          <input class="form-control" name="steam_collection_url" placeholder="https://steamcommunity.com/market/...">
+        </div>
+        <div class="col-12 col-md-1 d-flex align-items-end">
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="enabled" checked>
+            <span class="form-check-label">Вкл.</span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer text-end">
+      <button class="btn btn-primary" type="submit"><i class="ti ti-plus"></i>Добавить</button>
+    </div>
+  </form>
+</section>
 
-<div class="table-wrap">
-  <table>
-    <thead>
-      <tr>
-        <th>Название</th>
-        <th>Steam</th>
-        <th>Предметов</th>
-        <th>Последний парсинг</th>
-        <th>Включена</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in collections %}
-      <tr>
-        <td>{{ row.name }}</td>
-        <td>{% if row.steam_collection_url %}<a target="_blank" href="{{ row.steam_collection_url }}">открыть</a>{% else %}-{% endif %}</td>
-        <td>{{ row.item_count }}</td>
-        <td>{{ row.last_parsed_at or '-' }}</td>
-        <td>
-          <form method="post" action="/collections/{{ row.id }}/toggle">
-            <input type="hidden" name="enabled" value="{{ 0 if row.enabled else 1 }}">
-            <button class="secondary" type="submit">{{ 'да' if row.enabled else 'нет' }}</button>
-          </form>
-        </td>
-        <td class="actions">
-          <form method="post" action="/collections/{{ row.id }}/scan">
-            <button class="secondary" type="submit">Скан</button>
-          </form>
-          <form method="post" action="/collections/{{ row.id }}/delete" data-confirm="Удалить коллекцию и её предметы?">
-            <button class="danger" type="submit">Удалить</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<section class="card">
+  <div class="card-header"><h2 class="card-title"><i class="ti ti-folders me-2"></i>Список коллекций</h2></div>
+  <div class="table-responsive table-responsive-medium">
+    <table class="table table-vcenter card-table">
+      <thead>
+        <tr>
+          <th>Название</th>
+          <th>Steam</th>
+          <th>Предметов</th>
+          <th>Последний парсинг</th>
+          <th>Включена</th>
+          <th class="w-1"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in collections %}
+        <tr>
+          <td class="fw-semibold">{{ row.name }}</td>
+          <td>{% if row.steam_collection_url %}<a class="btn btn-outline-secondary btn-sm" target="_blank" href="{{ row.steam_collection_url }}"><i class="ti ti-external-link"></i>Steam</a>{% else %}<span class="text-secondary">-</span>{% endif %}</td>
+          <td>{{ row.item_count }}</td>
+          <td class="text-secondary">{{ row.last_parsed_at or '-' }}</td>
+          <td>
+            <form method="post" action="/collections/{{ row.id }}/toggle">
+              <input type="hidden" name="enabled" value="{{ 0 if row.enabled else 1 }}">
+              <button class="btn btn-sm {{ 'btn-success' if row.enabled else 'btn-outline-secondary' }}" type="submit">
+                <i class="ti {{ 'ti-toggle-right' if row.enabled else 'ti-toggle-left' }}"></i>{{ 'Да' if row.enabled else 'Нет' }}
+              </button>
+            </form>
+          </td>
+          <td>
+            <div class="table-actions">
+              <form method="post" action="/collections/{{ row.id }}/scan">
+                <button class="btn btn-outline-primary btn-sm" type="submit"><i class="ti ti-player-play"></i>Скан</button>
+              </form>
+              <form method="post" action="/collections/{{ row.id }}/delete" data-confirm="Удалить коллекцию и её предметы?">
+                <button class="btn btn-outline-danger btn-sm" type="submit"><i class="ti ti-trash"></i>Удалить</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}
