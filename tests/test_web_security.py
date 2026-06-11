@@ -31,3 +31,17 @@ def test_api_status_requires_basic_auth(tmp_path, monkeypatch):
         assert response.json()["parser_enabled"] is False
         assert "stats" in response.json()
         assert "scan_summary" in response.json()
+
+
+def test_dashboard_uses_scheme_relative_static_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("AIRMONEY_WEB_USER", "admin")
+    monkeypatch.setenv("AIRMONEY_WEB_PASSWORD", "secret")
+    app = create_app(Repository(tmp_path / "test.sqlite3"))
+    with TestClient(app) as client:
+        response = client.get("/dashboard", headers=_auth_header())
+    assert response.status_code == 200
+    assert 'href="/static/vendor/tabler/tabler.min.css"' in response.text
+    assert 'src="/static/vendor/htmx/htmx.min.js"' in response.text
+    assert 'href="/static/dashboard.css"' in response.text
+    assert 'src="/static/app.js"' in response.text
+    assert "http://testserver/static/" not in response.text

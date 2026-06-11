@@ -1,123 +1,225 @@
 {% extends "layout.html" %}
+{% block title %}Airmoney - Предметы{% endblock %}
 {% block content %}
-<section class="page-head">
+<section class="page-title-row">
   <div>
-    <h1>Предметы и ROI</h1>
-    <p>Индивидуальные правила перекрывают глобальный ROI из настроек.</p>
+    <div class="page-pretitle">ROI и правила</div>
+    <h1 class="page-title">Предметы</h1>
+    <div class="text-secondary mt-1">Индивидуальные правила перекрывают глобальный ROI из настроек.</div>
   </div>
 </section>
 
-<form class="inline-form" method="post" action="/items">
-  <select name="collection_id" required>
-    <option value="">Коллекция</option>
-    {% for collection in collections %}
-    <option value="{{ collection.id }}">{{ collection.name }}</option>
-    {% endfor %}
-  </select>
-  <input name="display_name" placeholder="AK-47 | Example">
-  <input name="market_hash_name" placeholder="Market hash name">
-  <select name="exterior">
-    <option value="">Состояние</option>
-    {% for exterior in exteriors %}<option value="{{ exterior }}">{{ exterior }}</option>{% endfor %}
-  </select>
-  <input name="rarity" placeholder="Редкость">
-  <input name="quality" placeholder="Качество">
-  <input name="steam_market_url" placeholder="Steam listing URL">
-  <label class="check"><input type="checkbox" name="enabled" checked> вкл.</label>
-  <button type="submit">Добавить</button>
-</form>
+<section class="row row-cards mb-4">
+  <div class="col-12">
+    <div class="card form-card">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-plus me-2"></i>Добавить предмет</h2></div>
+      <form method="post" action="/items">
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-lg-3">
+              <label class="form-label">Коллекция</label>
+              <select class="form-select" name="collection_id" required>
+                <option value="">Коллекция</option>
+                {% for collection in collections %}
+                <option value="{{ collection.id }}">{{ collection.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-lg-3">
+              <label class="form-label">Display name</label>
+              <input class="form-control" name="display_name" placeholder="AK-47 | Example">
+            </div>
+            <div class="col-12 col-lg-3">
+              <label class="form-label">Market hash name</label>
+              <input class="form-control" name="market_hash_name" placeholder="Market hash name">
+            </div>
+            <div class="col-12 col-lg-3">
+              <label class="form-label">Состояние</label>
+              <select class="form-select" name="exterior">
+                <option value="">Состояние</option>
+                {% for exterior in exteriors %}<option value="{{ exterior }}">{{ exterior }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Редкость</label>
+              <input class="form-control" name="rarity" placeholder="Restricted">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Качество</label>
+              <input class="form-control" name="quality" placeholder="Souvenir">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Steam listing URL</label>
+              <input class="form-control" name="steam_market_url" placeholder="https://steamcommunity.com/market/listings/730/...">
+            </div>
+            <div class="col-12">
+              <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="enabled" checked>
+                <span class="form-check-label">Предмет включён</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer text-end">
+          <button class="btn btn-primary" type="submit"><i class="ti ti-plus"></i>Добавить</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-<form class="inline-form" method="post" action="/items/generate-exteriors">
-  <select name="collection_id" required>
-    <option value="">Коллекция</option>
-    {% for collection in collections %}
-    <option value="{{ collection.id }}" {% if selected_collection == collection.id %}selected{% endif %}>{{ collection.name }}</option>
-    {% endfor %}
-  </select>
-  <input name="base_name" placeholder="Базовое имя: UMP-45 | Green Swirl" required>
-  <input name="market_name_prefix" placeholder="Префикс: Souvenir">
-  <input name="rarity" placeholder="Редкость">
-  <input name="quality" placeholder="Качество">
-  {% for exterior in exteriors %}
-  <label class="check">
-    <input type="checkbox" name="{{ exterior_field(exterior) }}" {% if exterior in settings.selected_exterior_list %}checked{% endif %}>
-    {{ exterior }}
-  </label>
-  {% endfor %}
-  <button type="submit">Создать состояния</button>
-</form>
+  <div class="col-12">
+    <div class="card form-card">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-copy-plus me-2"></i>Создать состояния</h2></div>
+      <form method="post" action="/items/generate-exteriors">
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-lg-3">
+              <label class="form-label">Коллекция</label>
+              <select class="form-select" name="collection_id" required>
+                <option value="">Коллекция</option>
+                {% for collection in collections %}
+                <option value="{{ collection.id }}" {% if selected_collection == collection.id %}selected{% endif %}>{{ collection.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-lg-3">
+              <label class="form-label">Базовое имя</label>
+              <input class="form-control" name="base_name" placeholder="UMP-45 | Green Swirl" required>
+            </div>
+            <div class="col-12 col-lg-2">
+              <label class="form-label">Префикс</label>
+              <input class="form-control" name="market_name_prefix" placeholder="Souvenir">
+            </div>
+            <div class="col-12 col-lg-2">
+              <label class="form-label">Редкость</label>
+              <input class="form-control" name="rarity" placeholder="Restricted">
+            </div>
+            <div class="col-12 col-lg-2">
+              <label class="form-label">Качество</label>
+              <input class="form-control" name="quality" placeholder="Souvenir">
+            </div>
+            {% for exterior in exteriors %}
+            <div class="col-12 col-sm-6 col-lg">
+              <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="{{ exterior_field(exterior) }}" {% if exterior in settings.selected_exterior_list %}checked{% endif %}>
+                <span class="form-check-label">{{ exterior }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card-footer text-end">
+          <button class="btn btn-outline-primary" type="submit"><i class="ti ti-copy-plus"></i>Создать состояния</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
 
-<form class="filters" method="get" action="/items">
-  <select name="collection_id">
-    <option value="">Все коллекции</option>
-    {% for collection in collections %}
-    <option value="{{ collection.id }}" {% if selected_collection == collection.id %}selected{% endif %}>{{ collection.name }}</option>
-    {% endfor %}
-  </select>
-  <button type="submit" class="secondary">Фильтр</button>
-</form>
+<section class="card filter-card mb-4">
+  <form method="get" action="/items" hx-get="/items" hx-target=".container-xl" hx-select=".container-xl" hx-swap="outerHTML" hx-push-url="true">
+    <div class="card-body">
+      <div class="row align-items-end">
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Коллекция</label>
+          <select class="form-select" name="collection_id">
+            <option value="">Все коллекции</option>
+            {% for collection in collections %}
+            <option value="{{ collection.id }}" {% if selected_collection == collection.id %}selected{% endif %}>{{ collection.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-auto">
+          <button class="btn btn-outline-secondary" type="submit"><i class="ti ti-filter"></i>Фильтр</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</section>
 
-<div class="table-wrap wide">
-  <table>
-    <thead>
-      <tr>
-        <th>Коллекция</th>
-        <th>Скин</th>
-        <th>Состояние</th>
-        <th>Цена</th>
-        <th>Правило</th>
-        <th>ROI / цель / лимиты</th>
-        <th>Telegram</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in items %}
-      <tr>
+<section class="card">
+  <div class="card-header"><h2 class="card-title"><i class="ti ti-list-details me-2"></i>Предметы и правила</h2></div>
+  <div class="table-responsive table-responsive-wide">
+    <table class="table table-vcenter card-table">
+      <thead>
+        <tr>
+          <th>Коллекция</th>
+          <th>Скин</th>
+          <th>Состояние</th>
+          <th>Цена</th>
+          <th>Правило</th>
+          <th>ROI / цель / лимиты</th>
+          <th>Telegram</th>
+          <th class="w-1"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
         {% set form_id = "item-rule-" ~ loop.index %}
-          <td>{{ item.collection_name }}</td>
+        <tr>
+          <td class="text-secondary">{{ item.collection_name }}</td>
           <td>
-            <input form="{{ form_id }}" name="display_name" value="{{ item.display_name }}">
-            <input form="{{ form_id }}" name="steam_market_url" value="{{ item.steam_market_url }}" placeholder="Steam URL">
-          </td>
-          <td>
-            <input form="{{ form_id }}" name="exterior" value="{{ item.exterior }}" placeholder="Exterior">
-            <input form="{{ form_id }}" name="rarity" value="{{ item.rarity }}" placeholder="Rarity">
-            <input form="{{ form_id }}" name="quality" value="{{ item.quality }}" placeholder="Quality">
+            <input class="form-control form-control-sm mb-2" form="{{ form_id }}" name="display_name" value="{{ item.display_name }}">
+            <input class="form-control form-control-sm" form="{{ form_id }}" name="steam_market_url" value="{{ item.steam_market_url }}" placeholder="Steam URL">
           </td>
           <td>
-            {% if item.current_price_rub %}<strong>{{ "%.2f"|format(item.current_price_rub) }}</strong> руб.{% else %}-{% endif %}
-            <div class="muted">{{ item.currency_source or '' }}</div>
+            <input class="form-control form-control-sm mb-2" form="{{ form_id }}" name="exterior" value="{{ item.exterior }}" placeholder="Exterior">
+            <input class="form-control form-control-sm mb-2" form="{{ form_id }}" name="rarity" value="{{ item.rarity }}" placeholder="Rarity">
+            <input class="form-control form-control-sm" form="{{ form_id }}" name="quality" value="{{ item.quality }}" placeholder="Quality">
           </td>
           <td>
-            <label class="check"><input form="{{ form_id }}" type="checkbox" name="item_enabled" {% if item.enabled %}checked{% endif %}> предмет</label>
-            <label class="check"><input form="{{ form_id }}" type="checkbox" name="rule_enabled" {% if item.rule_enabled is none or item.rule_enabled %}checked{% endif %}> правило</label>
-            <input form="{{ form_id }}" name="priority" value="{{ item.priority or 0 }}" placeholder="priority">
+            {% if item.current_price_rub %}
+              <div class="fw-bold">{{ "%.2f"|format(item.current_price_rub) }} руб.</div>
+            {% else %}
+              <span class="text-secondary">-</span>
+            {% endif %}
+            <div class="text-secondary small">{{ item.currency_source or '' }}</div>
           </td>
-          <td class="rule-grid">
-            <input form="{{ form_id }}" name="custom_roi_percent" value="{{ item.custom_roi_percent or '' }}" placeholder="ROI %, глоб. {{ settings.default_roi_percent }}">
-            <input form="{{ form_id }}" name="target_resale_price_rub" value="{{ item.target_resale_price_rub or '' }}" placeholder="Целевая продажа">
-            <input form="{{ form_id }}" name="max_buy_price_rub" value="{{ item.max_buy_price_rub or '' }}" placeholder="Макс. покупка">
-            <input form="{{ form_id }}" name="min_profit_rub" value="{{ item.min_profit_rub or '' }}" placeholder="Мин. прибыль">
-            <input form="{{ form_id }}" name="min_roi_percent" value="{{ item.min_roi_percent or '' }}" placeholder="Мин. ROI">
-            <input form="{{ form_id }}" name="float_min" value="{{ item.float_min or '' }}" placeholder="Float min">
-            <input form="{{ form_id }}" name="float_max" value="{{ item.float_max or '' }}" placeholder="Float max">
-            <input form="{{ form_id }}" name="target_float_min" value="{{ item.target_float_min or '' }}" placeholder="Target float min">
-            <input form="{{ form_id }}" name="target_float_max" value="{{ item.target_float_max or '' }}" placeholder="Target float max">
-            <input form="{{ form_id }}" name="pattern_ranges" value="{{ item.pattern_ranges or '' }}" placeholder="Pattern 1-5; 10">
+          <td>
+            <label class="form-check mb-2">
+              <input class="form-check-input" form="{{ form_id }}" type="checkbox" name="item_enabled" {% if item.enabled %}checked{% endif %}>
+              <span class="form-check-label">предмет</span>
+            </label>
+            <label class="form-check mb-2">
+              <input class="form-check-input" form="{{ form_id }}" type="checkbox" name="rule_enabled" {% if item.rule_enabled is none or item.rule_enabled %}checked{% endif %}>
+              <span class="form-check-label">правило</span>
+            </label>
+            <input class="form-control form-control-sm" form="{{ form_id }}" name="priority" value="{{ item.priority or 0 }}" placeholder="priority">
           </td>
-          <td><label class="check"><input form="{{ form_id }}" type="checkbox" name="telegram_alert_enabled" {% if item.telegram_alert_enabled is none or item.telegram_alert_enabled %}checked{% endif %}> алерт</label></td>
-          <td class="actions">
-            <form id="{{ form_id }}" method="post" action="/items/{{ item.id }}/rule">
-              <button type="submit">Сохранить</button>
-            </form>
-            <form method="post" action="/items/{{ item.id }}/scan">
-              <button class="secondary" type="submit">Скан</button>
-            </form>
+          <td>
+            <div class="rule-grid">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="custom_roi_percent" value="{{ item.custom_roi_percent or '' }}" placeholder="ROI %, глоб. {{ settings.default_roi_percent }}">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="target_resale_price_rub" value="{{ item.target_resale_price_rub or '' }}" placeholder="Целевая продажа">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="max_buy_price_rub" value="{{ item.max_buy_price_rub or '' }}" placeholder="Макс. покупка">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="min_profit_rub" value="{{ item.min_profit_rub or '' }}" placeholder="Мин. прибыль">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="min_roi_percent" value="{{ item.min_roi_percent or '' }}" placeholder="Мин. ROI">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="float_min" value="{{ item.float_min or '' }}" placeholder="Float min">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="float_max" value="{{ item.float_max or '' }}" placeholder="Float max">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="target_float_min" value="{{ item.target_float_min or '' }}" placeholder="Target float min">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="target_float_max" value="{{ item.target_float_max or '' }}" placeholder="Target float max">
+              <input class="form-control form-control-sm" form="{{ form_id }}" name="pattern_ranges" value="{{ item.pattern_ranges or '' }}" placeholder="Pattern 1-5; 10">
+            </div>
           </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+          <td>
+            <label class="form-check">
+              <input class="form-check-input" form="{{ form_id }}" type="checkbox" name="telegram_alert_enabled" {% if item.telegram_alert_enabled is none or item.telegram_alert_enabled %}checked{% endif %}>
+              <span class="form-check-label">алерт</span>
+            </label>
+          </td>
+          <td>
+            <div class="table-actions">
+              <form id="{{ form_id }}" method="post" action="/items/{{ item.id }}/rule">
+                <button class="btn btn-primary btn-sm" type="submit"><i class="ti ti-device-floppy"></i>Сохранить</button>
+              </form>
+              <form method="post" action="/items/{{ item.id }}/scan">
+                <button class="btn btn-outline-primary btn-sm" type="submit"><i class="ti ti-player-play"></i>Скан</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

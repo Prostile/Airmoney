@@ -1,6 +1,6 @@
 # Airmoney VPN
 
-Docker Compose запускает `vpn-gateway` как sing-box proxy и `container-1` как приложение. Nginx ходит на `http://container-1:8000`, а исходящий HTTP/HTTPS-трафик приложения и Playwright идут через `vpn-gateway:10808`.
+Docker Compose запускает `vpn-gateway` как sing-box proxy и `container-1` как приложение. Исходящий HTTP/HTTPS-трафик приложения и Playwright идут через `vpn-gateway:10808`.
 
 Приложение получает proxy env-переменные на `http://vpn-gateway:10808`. Это нужно, чтобы Python, Telegram, получение валют и Playwright не зависели от DNS внутри app-контейнера: DNS для внешних сайтов выполняет sing-box.
 
@@ -53,7 +53,7 @@ HTTPS_PROXY=http://vpn-gateway:10808
 AIRMONEY_BROWSER_PROXY=http://vpn-gateway:10808
 ```
 
-## Nginx
+## Nginx в Docker
 
 Nginx-контейнер должен быть подключён к сети `airmoney_net`:
 
@@ -61,8 +61,23 @@ Nginx-контейнер должен быть подключён к сети `a
 docker network connect airmoney_net nginx
 ```
 
+Если контейнер называется иначе, посмотри имя через `docker ps` и подставь его вместо `nginx`.
+
 Proxy target:
 
 ```nginx
 proxy_pass http://container-1:8000;
+```
+
+Чтобы подключение не слетало после пересоздания nginx-контейнера, добавь внешнюю сеть в compose nginx-проекта:
+
+```yaml
+services:
+  nginx:
+    networks:
+      - airmoney_net
+
+networks:
+  airmoney_net:
+    external: true
 ```

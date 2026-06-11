@@ -1,0 +1,9 @@
+{% if message %}
+<div class="alert alert-info alert-dismissible" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-info-circle icon alert-icon"></i></div>
+    <div>{{ message }}</div>
+  </div>
+  <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+</div>
+{% endif %}

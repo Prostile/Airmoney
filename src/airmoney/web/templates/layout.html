@@ -3,48 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Airmoney</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='dashboard.css') }}">
+  <title>{% block title %}Airmoney{% endblock %}</title>
+  <link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css">
+  <link rel="stylesheet" href="/static/vendor/tabler-icons/tabler-icons.min.css">
+  <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/dashboard">Airmoney</a>
-    <nav>
-      <a class="{{ 'active' if active == 'dashboard' else '' }}" href="/dashboard">Dashboard</a>
-      <a class="{{ 'active' if active == 'settings' else '' }}" href="/settings">Настройки</a>
-      <a class="{{ 'active' if active == 'collections' else '' }}" href="/collections">Коллекции</a>
-      <a class="{{ 'active' if active == 'items' else '' }}" href="/items">Предметы</a>
-      <a class="{{ 'active' if active == 'listings' else '' }}" href="/listings">Лоты</a>
-      <a class="{{ 'active' if active == 'candidates' else '' }}" href="/candidates">Кандидаты</a>
-      <a class="{{ 'active' if active == 'scan_runs' else '' }}" href="/scan-runs">Сканы</a>
-      <a class="{{ 'active' if active == 'import_export' else '' }}" href="/import-export">Импорт/экспорт</a>
-    </nav>
-  </header>
-
-  <section class="scan-progress" data-scan-progress hidden>
-    <div class="scan-progress__top">
-      <div>
-        <strong data-scan-title>Сканирование</strong>
-        <span data-scan-message>Подготовка</span>
-      </div>
-      <span class="scan-progress__percent" data-scan-percent>0%</span>
+  <div class="page">
+    {% include "components/sidebar.html" %}
+    <div class="page-wrapper">
+      <main class="page-body">
+        <div class="container-xl">
+          {% include "components/flash.html" %}
+          {% block content %}{% endblock %}
+        </div>
+      </main>
     </div>
-    <div class="scan-progress__bar" aria-hidden="true">
-      <span data-scan-bar></span>
-    </div>
-    <div class="scan-progress__meta">
-      <span data-scan-count>0 / 0</span>
-      <span data-scan-counters>Лотов 0, кандидатов 0</span>
-    </div>
-  </section>
+    {% include "components/scan_progress.html" %}
+  </div>
 
-  <main>
-    {% if message %}
-      <div class="notice">{{ message }}</div>
-    {% endif %}
-    {% block content %}{% endblock %}
-  </main>
-
-  <script src="{{ url_for('static', path='app.js') }}"></script>
+  <script src="/static/vendor/htmx/htmx.min.js"></script>
+  <script src="/static/vendor/tabler/tabler.min.js"></script>
+  <script type="module" src="/static/app.js"></script>
 </body>
 </html>

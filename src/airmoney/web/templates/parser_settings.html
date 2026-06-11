@@ -1,52 +1,144 @@
 {% extends "layout.html" %}
+{% block title %}Airmoney - Настройки{% endblock %}
 {% block content %}
-<section class="page-head">
+<section class="page-title-row">
   <div>
-    <h1>Настройки парсинга</h1>
-    <p>Глобальные параметры сканирования, ROI, комиссии, валют и Telegram.</p>
+    <div class="page-pretitle">Конфигурация</div>
+    <h1 class="page-title">Настройки парсинга</h1>
+    <div class="text-secondary mt-1">Глобальные параметры сканирования, ROI, комиссии, валют и Telegram.</div>
   </div>
 </section>
 
-<form class="form-grid" method="post" action="/settings">
-  <label class="check"><input type="checkbox" name="enabled" {% if settings.enabled %}checked{% endif %}> Мониторинг включён</label>
-  <label class="check"><input type="checkbox" name="headless" {% if settings.headless %}checked{% endif %}> Headless</label>
-  <label class="check"><input type="checkbox" name="telegram_alerts_enabled" {% if settings.telegram_alerts_enabled %}checked{% endif %}> Telegram-алерты</label>
+<form method="post" action="/settings">
+  <div class="row row-cards">
+    <div class="col-12">
+      <div class="card form-card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-settings me-2"></i>Мониторинг</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-4">
+              <label class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="enabled" {% if settings.enabled %}checked{% endif %}>
+                <span class="form-check-label">Мониторинг включён</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="headless" {% if settings.headless %}checked{% endif %}>
+                <span class="form-check-label">Headless</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="telegram_alerts_enabled" {% if settings.telegram_alerts_enabled %}checked{% endif %}>
+                <span class="form-check-label">Telegram-алерты</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Интервал, сек.</label>
+              <input class="form-control" type="number" name="check_interval_seconds" value="{{ settings.check_interval_seconds }}" min="1">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Max scrolls</label>
+              <input class="form-control" type="number" name="max_scrolls" value="{{ settings.max_scrolls }}" min="0">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Задержка запросов, сек.</label>
+              <input class="form-control" type="number" step="0.1" name="request_delay_seconds" value="{{ settings.request_delay_seconds }}" min="0">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Пауза при блокировке, сек.</label>
+              <input class="form-control" type="number" name="steam_block_pause_seconds" value="{{ settings.steam_block_pause_seconds }}" min="0">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Лимит таблицы</label>
+              <input class="form-control" type="number" name="web_table_limit" value="{{ settings.web_table_limit }}" min="10">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Мин. уровень Telegram</label>
+              <select class="form-select" name="telegram_min_alert_level">
+                {% for level in ["critical", "good", "watch", "skip"] %}
+                <option value="{{ level }}" {% if settings.telegram_min_alert_level == level %}selected{% endif %}>{{ level }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  <label>Интервал, сек.<input type="number" name="check_interval_seconds" value="{{ settings.check_interval_seconds }}" min="1"></label>
-  <label>Max scrolls<input type="number" name="max_scrolls" value="{{ settings.max_scrolls }}" min="0"></label>
-  <label>Задержка запросов, сек.<input type="number" step="0.1" name="request_delay_seconds" value="{{ settings.request_delay_seconds }}" min="0"></label>
-  <label>Пауза при блокировке, сек.<input type="number" name="steam_block_pause_seconds" value="{{ settings.steam_block_pause_seconds }}" min="0"></label>
-  <label>Лимит таблицы<input type="number" name="web_table_limit" value="{{ settings.web_table_limit }}" min="10"></label>
-  <label>Мин. уровень Telegram
-    <select name="telegram_min_alert_level">
-      {% for level in ["critical", "good", "watch", "skip"] %}
-      <option value="{{ level }}" {% if settings.telegram_min_alert_level == level %}selected{% endif %}>{{ level }}</option>
-      {% endfor %}
-    </select>
-  </label>
+    <div class="col-12 col-lg-6">
+      <div class="card form-card h-100">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-currency-rubel me-2"></i>Валюта</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12">
+              <label class="form-label">Провайдер валют</label>
+              <input class="form-control" name="currency_provider" value="{{ settings.currency_provider }}">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">TTL кэша, сек.</label>
+              <input class="form-control" type="number" name="currency_cache_ttl_seconds" value="{{ settings.currency_cache_ttl_seconds }}" min="1">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Fallback USD/RUB</label>
+              <input class="form-control" type="number" step="0.01" name="fallback_usd_to_rub" value="{{ settings.fallback_usd_to_rub }}" min="1">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Fallback EUR/RUB</label>
+              <input class="form-control" type="number" step="0.01" name="fallback_eur_to_rub" value="{{ settings.fallback_eur_to_rub }}" min="1">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  <label>Провайдер валют<input name="currency_provider" value="{{ settings.currency_provider }}"></label>
-  <label>TTL кэша валют, сек.<input type="number" name="currency_cache_ttl_seconds" value="{{ settings.currency_cache_ttl_seconds }}" min="1"></label>
-  <label>Fallback USD/RUB<input type="number" step="0.01" name="fallback_usd_to_rub" value="{{ settings.fallback_usd_to_rub }}" min="1"></label>
-  <label>Fallback EUR/RUB<input type="number" step="0.01" name="fallback_eur_to_rub" value="{{ settings.fallback_eur_to_rub }}" min="1"></label>
+    <div class="col-12 col-lg-6">
+      <div class="card form-card h-100">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-percentage me-2"></i>ROI и комиссия</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-6">
+              <label class="form-label">Глобальный ROI, %</label>
+              <input class="form-control" type="number" step="0.01" name="default_roi_percent" value="{{ settings.default_roi_percent }}" min="0">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label">Комиссия площадки, %</label>
+              <input class="form-control" type="number" step="0.01" name="default_market_fee_percent" value="{{ settings.default_market_fee_percent }}" min="0" max="99">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label">Мин. прибыль, руб.</label>
+              <input class="form-control" type="number" step="0.01" name="default_min_profit_rub" value="{{ settings.default_min_profit_rub }}" min="0">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label">Мин. ROI, %</label>
+              <input class="form-control" type="number" step="0.01" name="default_min_roi_percent" value="{{ settings.default_min_roi_percent }}" min="0">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  <label>Глобальный ROI, %<input type="number" step="0.01" name="default_roi_percent" value="{{ settings.default_roi_percent }}" min="0"></label>
-  <label>Комиссия площадки, %<input type="number" step="0.01" name="default_market_fee_percent" value="{{ settings.default_market_fee_percent }}" min="0" max="99"></label>
-  <label>Мин. прибыль, руб.<input type="number" step="0.01" name="default_min_profit_rub" value="{{ settings.default_min_profit_rub }}" min="0"></label>
-  <label>Мин. ROI, %<input type="number" step="0.01" name="default_min_roi_percent" value="{{ settings.default_min_roi_percent }}" min="0"></label>
-
-  <fieldset class="fieldset">
-    <legend>Состояния для новых предметов</legend>
-    {% for exterior in exteriors %}
-      <label class="check">
-        <input type="checkbox" name="{{ exterior_field(exterior) }}" {% if exterior in settings.selected_exterior_list %}checked{% endif %}>
-        {{ exterior }}
-      </label>
-    {% endfor %}
-  </fieldset>
-
-  <div class="form-actions">
-    <button type="submit">Сохранить</button>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-stars me-2"></i>Состояния для новых предметов</h2></div>
+        <div class="card-body">
+          <div class="row">
+            {% for exterior in exteriors %}
+            <div class="col-12 col-sm-6 col-lg-4 col-xl">
+              <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="{{ exterior_field(exterior) }}" {% if exterior in settings.selected_exterior_list %}checked{% endif %}>
+                <span class="form-check-label">{{ exterior }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card-footer text-end">
+          <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i>Сохранить</button>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
 {% endblock %}

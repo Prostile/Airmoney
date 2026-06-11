@@ -1,110 +1,141 @@
 {% extends "layout.html" %}
+{% block title %}Airmoney - Dashboard{% endblock %}
 {% block content %}
 {% if scan_summary.scan_targets == 0 %}
-<div class="notice warning">
-  <strong>Скану нечего обрабатывать.</strong>
-  {% if scan_summary.enabled_collections == 0 %}
-    Все коллекции выключены. Включи нужные коллекции на странице <a href="/collections">Коллекции</a>.
-  {% elif scan_summary.enabled_items == 0 %}
-    Все предметы выключены. Включи нужные предметы на странице <a href="/items">Предметы</a>.
-  {% elif scan_summary.items_blocked_by_disabled_collection > 0 %}
-    Есть включённые предметы, но их коллекции выключены. Включи коллекции на странице <a href="/collections">Коллекции</a>.
-  {% else %}
-    Проверь фильтры, коллекции и предметы.
-  {% endif %}
+<div class="alert alert-warning" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-alert-triangle icon alert-icon"></i></div>
+    <div>
+      <strong>Скану нечего обрабатывать.</strong>
+      {% if scan_summary.enabled_collections == 0 %}
+        Все коллекции выключены. Включи нужные коллекции на странице <a href="/collections">Коллекции</a>.
+      {% elif scan_summary.enabled_items == 0 %}
+        Все предметы выключены. Включи нужные предметы на странице <a href="/items">Предметы</a>.
+      {% elif scan_summary.items_blocked_by_disabled_collection > 0 %}
+        Есть включённые предметы, но их коллекции выключены. Включи коллекции на странице <a href="/collections">Коллекции</a>.
+      {% else %}
+        Проверь фильтры, коллекции и предметы.
+      {% endif %}
+    </div>
+  </div>
 </div>
 {% endif %}
 
-<section class="page-head">
+<section class="page-title-row">
   <div>
-    <h1>Рабочая сводка</h1>
-    <p>Мониторинг: {{ 'включён' if settings.enabled else 'выключен' }}. Покупка выполняется вручную в Steam.</p>
+    <div class="page-pretitle">Airmoney</div>
+    <h1 class="page-title">Рабочая сводка</h1>
+    <div class="text-secondary mt-1">Мониторинг: {{ 'включён' if settings.enabled else 'выключен' }}. Покупка выполняется вручную в Steam.</div>
   </div>
-  <div class="form-actions">
+  <div class="toolbar">
     <form method="post" action="/scan">
-      <button type="submit">Запустить скан</button>
+      <button class="btn btn-primary" type="submit"><i class="ti ti-player-play"></i>Запустить скан</button>
     </form>
     <form method="post" action="/monitor/start">
-      <button class="secondary" type="submit">Старт монитора</button>
+      <button class="btn btn-outline-secondary" type="submit"><i class="ti ti-power"></i>Старт монитора</button>
     </form>
     <form method="post" action="/monitor/stop">
-      <button class="secondary" type="submit">Стоп монитора</button>
+      <button class="btn btn-outline-secondary" type="submit"><i class="ti ti-player-stop"></i>Стоп монитора</button>
     </form>
   </div>
 </section>
 
-<section class="metrics">
-  <div class="metric"><span>Кандидатов</span><strong>{{ stats.candidates_total }}</strong></div>
-  <div class="metric"><span>Новых</span><strong>{{ stats.new_total }}</strong></div>
-  <div class="metric critical"><span>Critical</span><strong>{{ stats.critical_total }}</strong></div>
-  <div class="metric good"><span>Good</span><strong>{{ stats.good_total }}</strong></div>
-  <div class="metric watch"><span>Watch</span><strong>{{ stats.watch_total }}</strong></div>
-  <div class="metric"><span>Активных предметов</span><strong>{{ stats.active_items }}</strong></div>
-  <div class="metric"><span>Целей скана</span><strong>{{ scan_summary.scan_targets }}</strong></div>
+<section class="row row-cards mb-4">
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Кандидатов</div><div class="h1 mb-0">{{ stats.candidates_total }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Новых</div><div class="h1 mb-0">{{ stats.new_total }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Critical</div><div class="h1 mb-0 text-danger">{{ stats.critical_total }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Good</div><div class="h1 mb-0 text-success">{{ stats.good_total }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Watch</div><div class="h1 mb-0 text-warning">{{ stats.watch_total }}</div></div></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="card"><div class="card-body"><div class="subheader">Целей скана</div><div class="h1 mb-0">{{ scan_summary.scan_targets }}</div></div></div></div>
 </section>
 
-<section class="grid two">
-  <div>
-    <h2>Парсер</h2>
-    <table class="kv">
-      <tr><th>Последний парсинг</th><td>{{ stats.latest_parse or '-' }}</td></tr>
-      <tr><th>Последний запуск</th><td>{{ latest_scan.status if latest_scan else '-' }}</td></tr>
-      <tr><th>Запуск начат</th><td>{{ latest_scan.started_at if latest_scan else '-' }}</td></tr>
-      <tr><th>Фоновый поток</th><td>{{ 'жив' if monitor.thread_alive else 'остановлен' }}</td></tr>
-      <tr><th>Скан выполняется</th><td>{{ 'да' if monitor.scan_running else 'нет' }}</td></tr>
-      <tr><th>Последняя ошибка</th><td>{{ monitor.last_error or '-' }}</td></tr>
-      <tr><th>Интервал</th><td>{{ settings.check_interval_seconds }} сек.</td></tr>
-      <tr><th>Коллекций включено</th><td>{{ stats.active_collections }}</td></tr>
-      <tr><th>Предметов включено</th><td>{{ scan_summary.enabled_items }}</td></tr>
-      <tr><th>Целей в очереди</th><td>{{ scan_summary.scan_targets }}</td></tr>
-      <tr><th>Предметов в выключенных коллекциях</th><td>{{ scan_summary.items_blocked_by_disabled_collection }}</td></tr>
-      <tr><th>Max scrolls</th><td>{{ settings.max_scrolls }}</td></tr>
-    </table>
+<section class="row row-cards mb-4">
+  <div class="col-12 col-lg-7">
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title"><i class="ti ti-activity me-2"></i>Парсер</h2>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+          <tbody>
+            <tr><th>Последний парсинг</th><td>{{ stats.latest_parse or '-' }}</td></tr>
+            <tr><th>Последний запуск</th><td><span class="badge bg-secondary-lt">{{ latest_scan.status if latest_scan else '-' }}</span></td></tr>
+            <tr><th>Запуск начат</th><td>{{ latest_scan.started_at if latest_scan else '-' }}</td></tr>
+            <tr><th>Фоновый поток</th><td>{{ 'жив' if monitor.thread_alive else 'остановлен' }}</td></tr>
+            <tr><th>Скан выполняется</th><td>{{ 'да' if monitor.scan_running else 'нет' }}</td></tr>
+            <tr><th>Последняя ошибка</th><td class="text-secondary">{{ monitor.last_error or '-' }}</td></tr>
+            <tr><th>Интервал</th><td>{{ settings.check_interval_seconds }} сек.</td></tr>
+            <tr><th>Коллекций включено</th><td>{{ stats.active_collections }}</td></tr>
+            <tr><th>Предметов включено</th><td>{{ scan_summary.enabled_items }}</td></tr>
+            <tr><th>Целей в очереди</th><td>{{ scan_summary.scan_targets }}</td></tr>
+            <tr><th>Предметов в выключенных коллекциях</th><td>{{ scan_summary.items_blocked_by_disabled_collection }}</td></tr>
+            <tr><th>Max scrolls</th><td>{{ settings.max_scrolls }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
-  <div>
-    <h2>Валюта</h2>
-    <table class="kv">
-      <tr><th>USD/RUB</th><td>{{ "%.2f"|format(rates.usd_to_rub) }}</td></tr>
-      <tr><th>EUR/RUB</th><td>{{ "%.2f"|format(rates.eur_to_rub) }}</td></tr>
-      <tr><th>Источник</th><td>{{ rates.source }}{% if rates.is_fallback %} fallback{% endif %}</td></tr>
-      <tr><th>Обновлено</th><td>{{ rates.fetched_at_iso }}</td></tr>
-    </table>
-    <form method="post" action="/currency/refresh" class="form-actions subtle-actions">
-      <button class="secondary" type="submit">Обновить курс</button>
-    </form>
+  <div class="col-12 col-lg-5">
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title"><i class="ti ti-currency-rubel me-2"></i>Валюта</h2>
+        <div class="card-actions">
+          <form method="post" action="/currency/refresh">
+            <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="ti ti-refresh"></i>Обновить</button>
+          </form>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+          <tbody>
+            <tr><th>USD/RUB</th><td>{{ "%.2f"|format(rates.usd_to_rub) }}</td></tr>
+            <tr><th>EUR/RUB</th><td>{{ "%.2f"|format(rates.eur_to_rub) }}</td></tr>
+            <tr><th>Источник</th><td>{{ rates.source }}{% if rates.is_fallback %} <span class="badge bg-warning-lt">fallback</span>{% endif %}</td></tr>
+            <tr><th>Обновлено</th><td>{{ rates.fetched_at_iso }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer">
+        <a class="btn btn-primary" href="/candidates?only_new=true&sort=level"><i class="ti ti-target-arrow"></i>Открыть кандидатов</a>
+      </div>
+    </div>
   </div>
 </section>
 
-<p class="quick-link"><a href="/candidates?only_new=true&sort=level">Открыть таблицу кандидатов</a></p>
-
-<section class="table-wrap compact">
-  <table>
-    <thead>
-      <tr>
-        <th>Статус</th>
-        <th>Источник</th>
-        <th>Начало</th>
-        <th>Предметов</th>
-        <th>Лотов</th>
-        <th>Кандидатов</th>
-        <th>Алертов</th>
-        <th>Ошибка</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for run in scan_runs %}
-      <tr>
-        <td>{{ run.status }}</td>
-        <td>{{ run.trigger }}</td>
-        <td>{{ run.started_at }}</td>
-        <td>{{ run.scanned_items }}</td>
-        <td>{{ run.listings_saved }}</td>
-        <td>{{ run.candidates_saved }}</td>
-        <td>{{ run.alerts_sent }}</td>
-        <td class="muted">{{ run.error }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<section class="card">
+  <div class="card-header">
+    <h2 class="card-title"><i class="ti ti-history me-2"></i>Последние сканы</h2>
+    <div class="card-actions"><a class="btn btn-outline-secondary btn-sm" href="/scan-runs">Все сканы</a></div>
+  </div>
+  <div class="table-responsive table-responsive-medium">
+    <table class="table table-vcenter card-table">
+      <thead>
+        <tr>
+          <th>Статус</th>
+          <th>Источник</th>
+          <th>Начало</th>
+          <th>Предметов</th>
+          <th>Лотов</th>
+          <th>Кандидатов</th>
+          <th>Алертов</th>
+          <th>Ошибка</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in scan_runs %}
+        <tr>
+          <td><span class="badge bg-secondary-lt">{{ run.status }}</span></td>
+          <td>{{ run.trigger }}</td>
+          <td>{{ run.started_at }}</td>
+          <td>{{ run.scanned_items }}</td>
+          <td>{{ run.listings_saved }}</td>
+          <td>{{ run.candidates_saved }}</td>
+          <td>{{ run.alerts_sent }}</td>
+          <td class="text-secondary">{{ run.error }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}
