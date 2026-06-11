@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from contextlib import contextmanager
+from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from airmoney.anomaly.history import MarketSnapshot, ewma
 from airmoney.config.models import (
     Candidate,
     Collection,
@@ -61,8 +64,14 @@ class Repository:
         self.db_path = db_path
         initialize_database(db_path)
 
-    def connection(self) -> sqlite3.Connection:
-        return connect(self.db_path)
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        connection = connect(self.db_path)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def get_settings(self) -> ParserSettings:
         with self.connection() as connection:
@@ -89,6 +98,8 @@ class Repository:
             default_min_profit_rub=float(data["default_min_profit_rub"]),
             default_min_roi_percent=float(data["default_min_roi_percent"]),
             selected_exteriors=data.get("selected_exteriors") or ParserSettings().selected_exteriors,
+            anomaly_config=data.get("anomaly_config") or ParserSettings().anomaly_config,
+            telegram_config=data.get("telegram_config") or ParserSettings().telegram_config,
             updated_at=data["updated_at"],
         )
 
@@ -116,6 +127,8 @@ class Repository:
                     default_min_profit_rub = :default_min_profit_rub,
                     default_min_roi_percent = :default_min_roi_percent,
                     selected_exteriors = :selected_exteriors,
+                    anomaly_config = :anomaly_config,
+                    telegram_config = :telegram_config,
                     updated_at = :updated_at
                 WHERE id = 1
                 """,
@@ -590,15 +603,25 @@ class Repository:
                     id, listing_id, rule_id, buy_price_rub, estimated_resale_price_rub,
                     estimated_net_resale_rub, estimated_profit_rub,
                     estimated_roi_percent, market_fee_percent, recommendation_level,
-                    recommendation_score, recommendation_reason, status, created_at,
-                    updated_at
+                    recommendation_score, recommendation_reason, analysis_mode,
+                    alert_level, anomaly_score, fair_price_rub, local_median_rub,
+                    float_peer_median_rub, historical_baseline_rub,
+                    local_discount_percent, float_peer_discount_percent,
+                    historical_discount_percent, robust_z, float_bucket,
+                    sample_size, neighbor_count, anomaly_reasons, parsed_at,
+                    status, created_at, updated_at
                 )
                 VALUES (
                     :id, :listing_id, :rule_id, :buy_price_rub, :estimated_resale_price_rub,
                     :estimated_net_resale_rub, :estimated_profit_rub,
                     :estimated_roi_percent, :market_fee_percent, :recommendation_level,
-                    :recommendation_score, :recommendation_reason, :status, :created_at,
-                    :updated_at
+                    :recommendation_score, :recommendation_reason, :analysis_mode,
+                    :alert_level, :anomaly_score, :fair_price_rub, :local_median_rub,
+                    :float_peer_median_rub, :historical_baseline_rub,
+                    :local_discount_percent, :float_peer_discount_percent,
+                    :historical_discount_percent, :robust_z, :float_bucket,
+                    :sample_size, :neighbor_count, :anomaly_reasons, :parsed_at,
+                    :status, :created_at, :updated_at
                 )
                 ON CONFLICT(listing_id) DO UPDATE SET
                     rule_id = excluded.rule_id,
@@ -611,6 +634,22 @@ class Repository:
                     recommendation_level = excluded.recommendation_level,
                     recommendation_score = excluded.recommendation_score,
                     recommendation_reason = excluded.recommendation_reason,
+                    analysis_mode = excluded.analysis_mode,
+                    alert_level = excluded.alert_level,
+                    anomaly_score = excluded.anomaly_score,
+                    fair_price_rub = excluded.fair_price_rub,
+                    local_median_rub = excluded.local_median_rub,
+                    float_peer_median_rub = excluded.float_peer_median_rub,
+                    historical_baseline_rub = excluded.historical_baseline_rub,
+                    local_discount_percent = excluded.local_discount_percent,
+                    float_peer_discount_percent = excluded.float_peer_discount_percent,
+                    historical_discount_percent = excluded.historical_discount_percent,
+                    robust_z = excluded.robust_z,
+                    float_bucket = excluded.float_bucket,
+                    sample_size = excluded.sample_size,
+                    neighbor_count = excluded.neighbor_count,
+                    anomaly_reasons = excluded.anomaly_reasons,
+                    parsed_at = excluded.parsed_at,
                     status = excluded.status,
                     updated_at = excluded.updated_at
                 """,
@@ -626,6 +665,10 @@ class Repository:
         item_id: str | None = None,
         min_profit: float | None = None,
         min_roi: float | None = None,
+        min_score: float | None = None,
+        float_bucket: str | None = None,
+        souvenir_only: bool = False,
+        exact_item_only: bool = False,
         date_from: str | None = None,
         date_to: str | None = None,
         limit: int = 200,
@@ -653,6 +696,16 @@ class Repository:
         if min_roi is not None:
             clauses.append("c.estimated_roi_percent >= ?")
             params.append(min_roi)
+        if min_score is not None:
+            clauses.append("COALESCE(c.anomaly_score, c.recommendation_score) >= ?")
+            params.append(min_score)
+        if float_bucket:
+            clauses.append("c.float_bucket = ?")
+            params.append(float_bucket)
+        if souvenir_only:
+            clauses.append("i.is_souvenir = 1")
+        if exact_item_only:
+            clauses.append("c.analysis_mode = 'anomaly'")
         if date_from:
             clauses.append("c.created_at >= ?")
             params.append(_date_start(date_from))
@@ -664,6 +717,7 @@ class Repository:
             "profit": "c.estimated_profit_rub DESC",
             "roi": "c.estimated_roi_percent DESC",
             "price": "c.buy_price_rub ASC",
+            "score": "COALESCE(c.anomaly_score, c.recommendation_score) DESC",
             "level": "CASE c.recommendation_level WHEN 'critical' THEN 1 WHEN 'good' THEN 2 WHEN 'watch' THEN 3 ELSE 4 END",
             "time": "c.created_at DESC",
         }.get(sort, "c.created_at DESC")
@@ -765,6 +819,99 @@ class Repository:
                 params,
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def list_market_baselines(self, item_id: str) -> dict[str, float]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT float_bucket, rolling_median_rub
+                FROM market_baseline
+                WHERE item_id = ?
+                  AND rolling_median_rub IS NOT NULL
+                """,
+                (item_id,),
+            ).fetchall()
+        return {str(row["float_bucket"]): float(row["rolling_median_rub"]) for row in rows}
+
+    def save_market_snapshots(
+        self,
+        snapshots: list[MarketSnapshot],
+        alpha: float = 0.25,
+    ) -> None:
+        if not snapshots:
+            return
+        now = utc_now_iso()
+        with self.connection() as connection:
+            for snapshot in snapshots:
+                connection.execute(
+                    """
+                    INSERT INTO market_snapshot (
+                        item_id, scan_time, float_bucket, sample_size,
+                        floor_price_rub, q10_price_rub, q25_price_rub,
+                        median_price_rub, q75_price_rub
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot.item_id,
+                        now,
+                        snapshot.float_bucket,
+                        snapshot.sample_size,
+                        snapshot.floor_price_rub,
+                        snapshot.q10_price_rub,
+                        snapshot.q25_price_rub,
+                        snapshot.median_price_rub,
+                        snapshot.q75_price_rub,
+                    ),
+                )
+                existing = connection.execute(
+                    """
+                    SELECT *
+                    FROM market_baseline
+                    WHERE item_id = ? AND float_bucket = ?
+                    """,
+                    (snapshot.item_id, snapshot.float_bucket),
+                ).fetchone()
+                if existing:
+                    connection.execute(
+                        """
+                        UPDATE market_baseline
+                        SET rolling_median_rub = ?,
+                            rolling_q25_rub = ?,
+                            rolling_floor_rub = ?,
+                            sample_count = sample_count + ?,
+                            updated_at = ?
+                        WHERE item_id = ? AND float_bucket = ?
+                        """,
+                        (
+                            ewma(existing["rolling_median_rub"], snapshot.median_price_rub, alpha),
+                            ewma(existing["rolling_q25_rub"], snapshot.q25_price_rub, alpha),
+                            ewma(existing["rolling_floor_rub"], snapshot.floor_price_rub, alpha),
+                            snapshot.sample_size,
+                            now,
+                            snapshot.item_id,
+                            snapshot.float_bucket,
+                        ),
+                    )
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO market_baseline (
+                        item_id, float_bucket, rolling_median_rub,
+                        rolling_q25_rub, rolling_floor_rub, sample_count, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot.item_id,
+                        snapshot.float_bucket,
+                        snapshot.median_price_rub,
+                        snapshot.q25_price_rub,
+                        snapshot.floor_price_rub,
+                        snapshot.sample_size,
+                        now,
+                    ),
+                )
 
 
     def rule_stats(self, limit: int = 200) -> list[dict[str, Any]]:
@@ -1073,6 +1220,8 @@ class Repository:
                 default_min_profit_rub = :default_min_profit_rub,
                 default_min_roi_percent = :default_min_roi_percent,
                 selected_exteriors = :selected_exteriors,
+                anomaly_config = :anomaly_config,
+                telegram_config = :telegram_config,
                 updated_at = :updated_at
             WHERE id = 1
             """,

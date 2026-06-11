@@ -23,6 +23,7 @@
             <thead>
               <tr>
                 <th>Уровень</th>
+                <th>Score</th>
                 <th>Статус</th>
                 <th>Скин</th>
                 <th>Коллекция</th>
@@ -31,6 +32,11 @@
                 <th>Профит</th>
                 <th>ROI</th>
                 <th>Float</th>
+                <th>Bucket</th>
+                <th>Fair</th>
+                <th>Local</th>
+                <th>Float peer</th>
+                <th>Discount</th>
                 <th>Pattern</th>
                 <th>Найден</th>
                 <th>Курс</th>
@@ -40,6 +46,7 @@
               {% for row in candidates %}
               <tr class="level-{{ row.recommendation_level }}">
                 <td><span class="badge badge-level-{{ row.recommendation_level }}">{{ row.recommendation_level }}</span></td>
+                <td>{{ "%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score) }}</td>
                 <td><span class="badge bg-secondary-lt">{{ row.status }}</span></td>
                 <td class="fw-semibold">{{ row.skin_name }}</td>
                 <td>{{ row.collection_name }}</td>
@@ -48,6 +55,11 @@
                 <td class="{{ 'profit-positive' if row.estimated_profit_rub > 0 else 'profit-negative' }}">{{ "%.2f"|format(row.estimated_profit_rub) }}</td>
                 <td>{{ "%.2f"|format(row.estimated_roi_percent) }}%</td>
                 <td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else '-' }}</td>
+                <td>{{ row.float_bucket or '-' }}</td>
+                <td>{{ "%.2f"|format(row.fair_price_rub) if row.fair_price_rub is not none else '-' }}</td>
+                <td>{{ "%.2f"|format(row.local_median_rub) if row.local_median_rub is not none else '-' }}</td>
+                <td>{{ "%.2f"|format(row.float_peer_median_rub) if row.float_peer_median_rub is not none else '-' }}</td>
+                <td>{{ "%.1f"|format(row.float_peer_discount_percent or row.local_discount_percent) ~ '%' if row.float_peer_discount_percent is not none or row.local_discount_percent is not none else '-' }}</td>
                 <td>{{ row.pattern if row.pattern is not none else '-' }}</td>
                 <td>{{ row.created_at }}</td>
                 <td>{{ row.currency_source }} {{ row.currency_fetched_at or '' }}</td>

@@ -14,6 +14,7 @@ def export_candidates_html(path: str | Path, repo: Repository | None = None) -> 
     body = "\n".join(
         "<tr>"
         f"<td>{escape(str(row.get('recommendation_level', '')))}</td>"
+        f"<td>{escape(str(row.get('anomaly_score') or row.get('recommendation_score') or ''))}</td>"
         f"<td>{escape(str(row.get('status', '')))}</td>"
         f"<td>{escape(str(row.get('skin_name', '')))}</td>"
         f"<td>{escape(str(row.get('collection_name', '')))}</td>"
@@ -23,6 +24,10 @@ def export_candidates_html(path: str | Path, repo: Repository | None = None) -> 
         f"<td>{escape(str(row.get('estimated_profit_rub', '')))}</td>"
         f"<td>{escape(str(row.get('estimated_roi_percent', '')))}</td>"
         f"<td>{escape(str(row.get('float_value', '')))}</td>"
+        f"<td>{escape(str(row.get('float_bucket', '')))}</td>"
+        f"<td>{escape(str(row.get('fair_price_rub', '')))}</td>"
+        f"<td>{escape(str(row.get('local_median_rub', '')))}</td>"
+        f"<td>{escape(str(row.get('float_peer_median_rub', '')))}</td>"
         f"<td>{escape(str(row.get('pattern', '')))}</td>"
         f"<td>{escape(str(row.get('currency_source', '')))} {escape(str(row.get('currency_fetched_at', '')))}</td>"
         f"<td>{escape(str(row.get('created_at', '')))}</td>"
@@ -46,9 +51,10 @@ def export_candidates_html(path: str | Path, repo: Repository | None = None) -> 
   <table>
     <thead>
       <tr>
-        <th>Уровень</th><th>Статус</th><th>Скин</th><th>Коллекция</th>
+        <th>Уровень</th><th>Score</th><th>Статус</th><th>Скин</th><th>Коллекция</th>
         <th>Покупка</th><th>Продажа</th><th>Чистыми</th><th>Профит</th>
-        <th>ROI</th><th>Float</th><th>Pattern</th><th>Курс</th><th>Найден</th>
+        <th>ROI</th><th>Float</th><th>Bucket</th><th>Fair</th><th>Local</th>
+        <th>Float peer</th><th>Pattern</th><th>Курс</th><th>Найден</th>
       </tr>
     </thead>
     <tbody>{body}</tbody>

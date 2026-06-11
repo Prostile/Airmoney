@@ -24,6 +24,18 @@
           </label>
         </div>
         <div class="col-12 col-md-4 col-xl-2">
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="souvenir_only" value="true" {% if filters.souvenir_only %}checked{% endif %}>
+            <span class="form-check-label">Souvenir only</span>
+          </label>
+        </div>
+        <div class="col-12 col-md-4 col-xl-2">
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="exact_item_only" value="true" {% if filters.exact_item_only %}checked{% endif %}>
+            <span class="form-check-label">Exact/anomaly only</span>
+          </label>
+        </div>
+        <div class="col-12 col-md-4 col-xl-2">
           <label class="form-label">Уровень</label>
           <select class="form-select" name="level">
             <option value="">Все уровни</option>
@@ -68,6 +80,19 @@
           <input class="form-control" type="number" step="0.01" name="min_roi" value="{{ filters.min_roi or '' }}">
         </div>
         <div class="col-12 col-md-3 col-xl-2">
+          <label class="form-label">Score от</label>
+          <input class="form-control" type="number" step="0.01" name="min_score" value="{{ filters.min_score or '' }}">
+        </div>
+        <div class="col-12 col-md-4 col-xl-2">
+          <label class="form-label">Float bucket</label>
+          <select class="form-select" name="float_bucket">
+            <option value="">Все bucket</option>
+            {% for bucket in float_buckets %}
+            <option value="{{ bucket.id }}" {% if filters.float_bucket == bucket.id %}selected{% endif %}>{{ bucket.id }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-3 col-xl-2">
           <label class="form-label">Дата от</label>
           <input class="form-control" type="date" name="date_from" value="{{ filters.date_from or '' }}">
         </div>
@@ -78,7 +103,7 @@
         <div class="col-12 col-md-4 col-xl-2">
           <label class="form-label">Сортировка</label>
           <select class="form-select" name="sort">
-            {% for option in ["time", "profit", "roi", "price", "level"] %}
+            {% for option in ["time", "score", "profit", "roi", "price", "level"] %}
             <option value="{{ option }}" {% if filters.sort == option %}selected{% endif %}>{{ option }}</option>
             {% endfor %}
           </select>
@@ -118,6 +143,7 @@
           <th class="w-1"></th>
           <th>Статус</th>
           <th>Уровень</th>
+          <th>Score</th>
           <th>Скин</th>
           <th>Коллекция</th>
           <th>Правило</th>
@@ -127,7 +153,11 @@
           <th>Профит</th>
           <th>ROI</th>
           <th>Float</th>
+          <th>Bucket</th>
           <th>Pattern</th>
+          <th>Baseline</th>
+          <th>Discount</th>
+          <th>Sample</th>
           <th>Курс</th>
           <th>Найден</th>
           <th class="w-1">Действия</th>
@@ -140,9 +170,13 @@
           <td><span class="badge bg-secondary-lt">{{ row.status }}</span></td>
           <td>
             <span class="badge badge-level-{{ row.recommendation_level }}">{{ row.recommendation_level }}</span>
-            <div class="text-secondary small mt-1">{{ row.recommendation_reason }}</div>
+            <div class="text-secondary small mt-1">{{ row.analysis_mode or 'legacy' }}</div>
           </td>
-          <td class="fw-semibold">{{ row.skin_name }}</td>
+          <td>{{ "%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score) }}</td>
+          <td class="fw-semibold">
+            {{ row.skin_name }}
+            <div class="text-secondary small mt-1">{{ row.anomaly_reasons or row.recommendation_reason }}</div>
+          </td>
           <td class="text-secondary">{{ row.collection_name }}</td>
           <td class="text-secondary">{{ row.rule_id or '-' }}</td>
           <td>{{ "%.2f"|format(row.buy_price_rub) }}</td>
@@ -151,7 +185,19 @@
           <td class="{{ 'profit-positive' if row.estimated_profit_rub > 0 else 'profit-negative' }}">{{ "%.2f"|format(row.estimated_profit_rub) }}</td>
           <td>{{ "%.2f"|format(row.estimated_roi_percent) }}%</td>
           <td>{{ "%.6f"|format(row.float_value) if row.float_value is not none else '-' }}</td>
+          <td>{{ row.float_bucket or '-' }}</td>
           <td>{{ row.pattern if row.pattern is not none else '-' }}</td>
+          <td>
+            <div>Fair: {{ "%.2f"|format(row.fair_price_rub) if row.fair_price_rub is not none else '-' }}</div>
+            <div class="text-secondary small">Local: {{ "%.2f"|format(row.local_median_rub) if row.local_median_rub is not none else '-' }}</div>
+            <div class="text-secondary small">Float: {{ "%.2f"|format(row.float_peer_median_rub) if row.float_peer_median_rub is not none else '-' }}</div>
+          </td>
+          <td>
+            <div>Local: {{ "%.1f"|format(row.local_discount_percent) ~ '%' if row.local_discount_percent is not none else '-' }}</div>
+            <div class="text-secondary small">Float: {{ "%.1f"|format(row.float_peer_discount_percent) ~ '%' if row.float_peer_discount_percent is not none else '-' }}</div>
+            <div class="text-secondary small">Z: {{ "%.2f"|format(row.robust_z) if row.robust_z is not none else '-' }}</div>
+          </td>
+          <td>{{ row.sample_size or '-' }}<div class="text-secondary small">nn {{ row.neighbor_count or 0 }}</div></td>
           <td>{{ row.currency_source }}<div class="text-secondary small">{{ row.currency_fetched_at or '-' }}</div></td>
           <td class="text-secondary">{{ row.created_at }}</td>
           <td>

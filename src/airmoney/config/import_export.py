@@ -6,7 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from airmoney.config.models import Collection, EXTERIORS, ItemDefinition, ParserSettings, SnipingRule, to_bool, utc_now_iso
+from airmoney.config.models import (
+    AnomalySettings,
+    Collection,
+    EXTERIORS,
+    ItemDefinition,
+    ParserSettings,
+    SnipingRule,
+    TelegramAlertSettings,
+    to_bool,
+    utc_now_iso,
+)
 from airmoney.storage.repositories import Repository
 
 
@@ -79,9 +89,11 @@ def export_config(repo: Repository) -> str:
             "min_profit_rub": settings.default_min_profit_rub,
             "min_roi_percent": settings.default_min_roi_percent,
         },
+        "anomaly": settings.anomaly_settings.to_dict(),
         "telegram": {
             "enabled": settings.telegram_alerts_enabled,
             "min_alert_level": settings.telegram_min_alert_level,
+            **settings.telegram_alert_settings.to_dict(),
         },
         "collections": [
             {
@@ -182,6 +194,7 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
     currency = _section(data, "currency", errors)
     profit = _section(data, "profit", errors)
     telegram = _section(data, "telegram", errors)
+    anomaly = _section(data, "anomaly", errors)
     settings = ParserSettings()
     settings.enabled = to_bool(parser.get("enabled", settings.enabled))
     settings.check_interval_seconds = _positive_int(parser.get("check_interval_seconds", settings.check_interval_seconds), "parser.check_interval_seconds", errors)
@@ -209,7 +222,40 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
     settings.telegram_min_alert_level = str(telegram.get("min_alert_level", settings.telegram_min_alert_level))
     if settings.telegram_min_alert_level not in {"critical", "good", "watch", "skip"}:
         errors.append("telegram.min_alert_level должен быть critical/good/watch/skip.")
+    anomaly_settings = _parse_anomaly(anomaly, errors)
+    settings.set_anomaly_settings(anomaly_settings)
+    telegram_settings = _parse_telegram_alert_settings(telegram, errors)
+    settings.set_telegram_alert_settings(telegram_settings)
     settings.updated_at = utc_now_iso()
+    return settings
+
+
+def _parse_anomaly(data: dict[str, Any], errors: list[str]) -> AnomalySettings:
+    settings = AnomalySettings.from_dict(data)
+    if settings.sample.target_listings > settings.sample.max_listings:
+        errors.append("anomaly.sample.target_listings не должен быть больше max_listings.")
+    if settings.sample.min_listings > settings.sample.max_listings:
+        errors.append("anomaly.sample.min_listings не должен быть больше max_listings.")
+    if settings.thresholds.critical_score < settings.thresholds.good_score:
+        errors.append("anomaly.thresholds.critical_score не должен быть меньше good_score.")
+    if settings.thresholds.good_score < settings.thresholds.watch_score:
+        errors.append("anomaly.thresholds.good_score не должен быть меньше watch_score.")
+    seen_buckets: set[str] = set()
+    for bucket in settings.float_buckets:
+        if bucket.id in seen_buckets:
+            errors.append(f"anomaly.float_buckets содержит дубликат id: {bucket.id!r}.")
+        seen_buckets.add(bucket.id)
+        if bucket.min < 0 or bucket.max < 0:
+            errors.append(f"anomaly.float_buckets[{bucket.id}].min/max должны быть неотрицательными.")
+        if bucket.min > bucket.max:
+            errors.append(f"anomaly.float_buckets[{bucket.id}].min не должен быть больше max.")
+    return settings
+
+
+def _parse_telegram_alert_settings(data: dict[str, Any], errors: list[str]) -> TelegramAlertSettings:
+    settings = TelegramAlertSettings.from_dict(data)
+    if settings.message_format != "compact":
+        errors.append("telegram.message_format пока поддерживает только compact.")
     return settings
 
 

@@ -118,4 +118,8 @@ def evaluate_listing(
         recommendation_level=level,
         recommendation_score=score,
         recommendation_reason="; ".join(reasons),
+        analysis_mode="legacy",
+        alert_level=level,
+        anomaly_score=None,
+        fair_price_rub=estimate.target_resale_price,
     )

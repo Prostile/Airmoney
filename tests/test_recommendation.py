@@ -74,7 +74,7 @@ def test_telegram_alert_template_is_short():
     )
     assert "UMP-45 | Green Swirl" in text
     assert "https://example.test/candidates" in text
-    assert "Покупка" in text
+    assert "Buy:" in text
 
 
 def test_target_float_adds_scoring_reason():
