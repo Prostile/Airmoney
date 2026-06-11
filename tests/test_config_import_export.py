@@ -68,6 +68,8 @@ def test_import_valid_config_and_export(tmp_path):
     assert "Factory New" in exported
     assert "anomaly:" in exported
     assert "float_buckets:" in exported
+    assert "sort_by: price_asc" in exported
+    assert "save_skip_candidates: false" in exported
     assert "message_format: compact" in exported
 
 

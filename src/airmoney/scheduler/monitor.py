@@ -40,7 +40,7 @@ def run_scan_cycle(
         )
         settings = repository.get_settings()
         skipped = bool(result.message and result.scanned_items == 0)
-        alerts_sent = 0 if skipped else TelegramNotifier(repository).send_pending_alerts(settings)
+        alerts_sent = 0 if skipped else TelegramNotifier(repository).send_pending_alerts(settings, force_batch=True)
         repository.finish_scan_run(
             run_id,
             "skipped" if skipped else "success",

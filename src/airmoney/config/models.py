@@ -123,6 +123,7 @@ class AnomalySampleSettings:
     max_listings: int = 60
     exclude_candidate_from_baseline: bool = True
     require_exact_item_match: bool = True
+    sort_by: str = "price_asc"
 
 
 @dataclass
@@ -161,6 +162,13 @@ class AnomalyHistorySettings:
 
 
 @dataclass
+class AnomalyDebugSettings:
+    save_skip_candidates: bool = False
+    log_rejected_exact_match: bool = True
+    max_rejected_exact_match_log: int = 5
+
+
+@dataclass
 class AnomalySettings:
     enabled: bool = True
     sample: AnomalySampleSettings = field(default_factory=AnomalySampleSettings)
@@ -174,6 +182,7 @@ class AnomalySettings:
     )
     nearest_neighbors: NearestNeighborsSettings = field(default_factory=NearestNeighborsSettings)
     history: AnomalyHistorySettings = field(default_factory=AnomalyHistorySettings)
+    debug: AnomalyDebugSettings = field(default_factory=AnomalyDebugSettings)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "AnomalySettings":
@@ -183,6 +192,7 @@ class AnomalySettings:
         scoring = _json_dict(raw.get("scoring"), {})
         nearest = _json_dict(raw.get("nearest_neighbors"), {})
         history = _json_dict(raw.get("history"), {})
+        debug = _json_dict(raw.get("debug"), {})
         buckets = []
         for row in _json_list(raw.get("float_buckets"), DEFAULT_FLOAT_BUCKETS):
             bucket_id = str(row.get("id", "")).strip()
@@ -205,6 +215,7 @@ class AnomalySettings:
                 max_listings=max(1, _safe_int(sample.get("max_listings"), 60)),
                 exclude_candidate_from_baseline=to_bool(sample.get("exclude_candidate_from_baseline", True)),
                 require_exact_item_match=to_bool(sample.get("require_exact_item_match", True)),
+                sort_by=str(sample.get("sort_by") or "price_asc"),
             ),
             thresholds=AnomalyThresholdSettings(
                 min_local_discount_percent=max(0.0, _safe_float(thresholds.get("min_local_discount_percent"), 15.0)),
@@ -234,6 +245,11 @@ class AnomalySettings:
                 ewma_alpha=max(0.0, min(1.0, _safe_float(history.get("ewma_alpha"), 0.25))),
                 min_snapshots=max(1, _safe_int(history.get("min_snapshots"), 5)),
             ),
+            debug=AnomalyDebugSettings(
+                save_skip_candidates=to_bool(debug.get("save_skip_candidates", False)),
+                log_rejected_exact_match=to_bool(debug.get("log_rejected_exact_match", True)),
+                max_rejected_exact_match_log=max(0, _safe_int(debug.get("max_rejected_exact_match_log"), 5)),
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -245,6 +261,7 @@ class AnomalySettings:
                 "max_listings": self.sample.max_listings,
                 "exclude_candidate_from_baseline": self.sample.exclude_candidate_from_baseline,
                 "require_exact_item_match": self.sample.require_exact_item_match,
+                "sort_by": self.sample.sort_by,
             },
             "thresholds": {
                 "min_local_discount_percent": self.thresholds.min_local_discount_percent,
@@ -276,6 +293,11 @@ class AnomalySettings:
                 "storage": self.history.storage,
                 "ewma_alpha": self.history.ewma_alpha,
                 "min_snapshots": self.history.min_snapshots,
+            },
+            "debug": {
+                "save_skip_candidates": self.debug.save_skip_candidates,
+                "log_rejected_exact_match": self.debug.log_rejected_exact_match,
+                "max_rejected_exact_match_log": self.debug.max_rejected_exact_match_log,
             },
         }
 

@@ -232,6 +232,8 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
 
 def _parse_anomaly(data: dict[str, Any], errors: list[str]) -> AnomalySettings:
     settings = AnomalySettings.from_dict(data)
+    if settings.sample.sort_by not in {"price_asc", "none"}:
+        errors.append("anomaly.sample.sort_by должен быть price_asc или none.")
     if settings.sample.target_listings > settings.sample.max_listings:
         errors.append("anomaly.sample.target_listings не должен быть больше max_listings.")
     if settings.sample.min_listings > settings.sample.max_listings:

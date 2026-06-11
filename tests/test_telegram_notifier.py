@@ -64,6 +64,27 @@ def test_telegram_batch_waits_until_interval(monkeypatch):
     assert repo.logged == []
 
 
+def test_telegram_batch_force_sends_before_interval(monkeypatch):
+    sent_messages = []
+
+    def fake_send(text):
+        sent_messages.append(text)
+        return True, ""
+
+    repo = FakeAlertRepo([candidate("cand_1", utc_now_iso())])
+    monkeypatch.setattr(notifier_module, "telegram_is_configured", lambda: True)
+    monkeypatch.setattr(notifier_module, "send_telegram_message", fake_send)
+
+    sent = TelegramNotifier(repo).send_pending_alerts(
+        telegram_settings(batch_interval_seconds=3600),
+        force_batch=True,
+    )
+
+    assert sent == 1
+    assert len(sent_messages) == 1
+    assert repo.logged == [("cand_1", "sent", "")]
+
+
 def test_telegram_batch_sends_after_interval(monkeypatch):
     sent_messages = []
 

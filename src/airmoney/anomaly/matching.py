@@ -12,11 +12,20 @@ EXTERIOR_ALIASES = {
     "field-tested": "field-tested",
     "well-worn": "well-worn",
     "battle-scarred": "battle-scarred",
+    "прямо с завода": "factory new",
+    "немного поношенное": "minimal wear",
+    "после полевых испытаний": "field-tested",
+    "поношенное": "well-worn",
+    "закаленное в боях": "battle-scarred",
+    "закалённое в боях": "battle-scarred",
 }
 
 
 def normalize_market_name(value: str) -> str:
     text = str(value or "").lower().replace("™", "")
+    text = text.replace("ё", "е").replace("–", "-").replace("—", "-")
+    for source, target in EXTERIOR_ALIASES.items():
+        text = text.replace(source.replace("ё", "е"), target)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 

@@ -67,7 +67,12 @@ class TelegramNotifier:
         load_dotenv()
         self.site_url = (site_url or os.getenv("AIRMONEY_SITE_URL") or "http://127.0.0.1:8000").rstrip("/")
 
-    def send_pending_alerts(self, settings: ParserSettings, limit: int = 20) -> int:
+    def send_pending_alerts(
+        self,
+        settings: ParserSettings,
+        limit: int = 20,
+        force_batch: bool = False,
+    ) -> int:
         if not settings.telegram_alerts_enabled or not telegram_is_configured():
             return 0
         sent = 0
@@ -100,6 +105,7 @@ class TelegramNotifier:
             batch_candidates,
             interval_seconds=alert_settings.batch_interval_seconds,
             max_alerts_per_message=alert_settings.max_alerts_per_message,
+            force=force_batch,
         ):
             limited = batch_candidates[: alert_settings.max_alerts_per_message]
             ok, error = send_telegram_message(
@@ -116,7 +122,10 @@ def _batch_ready(
     candidates: list[dict],
     interval_seconds: int,
     max_alerts_per_message: int,
+    force: bool = False,
 ) -> bool:
+    if force:
+        return bool(candidates)
     if len(candidates) >= max_alerts_per_message:
         return True
     created_at_values = [

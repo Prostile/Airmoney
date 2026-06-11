@@ -155,6 +155,29 @@
               <input class="form-control" type="number" name="anomaly_max_listings" value="{{ anomaly.sample.max_listings }}" min="1">
             </div>
             <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Steam sort</label>
+              <select class="form-select" name="anomaly_sort_by">
+                <option value="price_asc" {% if anomaly.sample.sort_by == "price_asc" %}selected{% endif %}>price asc</option>
+                <option value="none" {% if anomaly.sample.sort_by == "none" %}selected{% endif %}>none</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" name="anomaly_log_rejected_exact_match" {% if anomaly.debug.log_rejected_exact_match %}checked{% endif %}>
+                <span class="form-check-label">Log rejected exact-match</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" name="anomaly_save_skip_candidates" {% if anomaly.debug.save_skip_candidates %}checked{% endif %}>
+                <span class="form-check-label">Save skip candidates</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Rejected log limit</label>
+              <input class="form-control" type="number" name="anomaly_max_rejected_exact_match_log" value="{{ anomaly.debug.max_rejected_exact_match_log }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
               <label class="form-label">Min local discount, %</label>
               <input class="form-control" type="number" step="0.01" name="anomaly_min_local_discount_percent" value="{{ anomaly.thresholds.min_local_discount_percent }}" min="0">
             </div>

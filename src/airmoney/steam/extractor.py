@@ -29,20 +29,20 @@ WEAR_RE = re.compile(
     r"(?:Степень\s+износа|Float\s+Value|Wear\s+Rating|Float)\s*[:#]?\s*([0-9]+(?:[,.][0-9]+)?)",
     re.IGNORECASE,
 )
-EXTERIOR_LINE_RE = re.compile(
-    r"^\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$",
-    re.IGNORECASE,
-)
-EXTERIOR_IN_NAME_RE = re.compile(
-    r"\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)",
-    re.IGNORECASE,
-)
+EXTERIOR_LINE_RE = re.compile(r"^\(([^()]+)\)$", re.IGNORECASE)
+EXTERIOR_IN_NAME_RE = re.compile(r"\(([^()]+)\)", re.IGNORECASE)
 EXTERIOR_CANONICAL = {
     "factory new": "Factory New",
     "minimal wear": "Minimal Wear",
     "field-tested": "Field-Tested",
     "well-worn": "Well-Worn",
     "battle-scarred": "Battle-Scarred",
+    "прямо с завода": "Factory New",
+    "немного поношенное": "Minimal Wear",
+    "после полевых испытаний": "Field-Tested",
+    "поношенное": "Well-Worn",
+    "закаленное в боях": "Battle-Scarred",
+    "закалённое в боях": "Battle-Scarred",
 }
 
 
@@ -203,16 +203,29 @@ def parse_name_from_card_text(text: str) -> str:
 
 
 def _append_following_exterior(name: str, following_lines: list[str]) -> str:
-    if EXTERIOR_IN_NAME_RE.search(name):
+    if _name_has_exterior(name):
         return name
     for line in following_lines[:4]:
         if is_bad_name_line(line):
             continue
         match = EXTERIOR_LINE_RE.match(line)
         if match:
-            exterior = EXTERIOR_CANONICAL.get(match.group(1).lower(), match.group(1))
-            return f"{name} ({exterior})"
+            exterior = _canonical_exterior(match.group(1))
+            if exterior:
+                return f"{name} ({exterior})"
     return name
+
+
+def _name_has_exterior(name: str) -> bool:
+    return any(_canonical_exterior(match.group(1)) for match in EXTERIOR_IN_NAME_RE.finditer(name))
+
+
+def _canonical_exterior(value: str) -> str:
+    return EXTERIOR_CANONICAL.get(_normalize_exterior_key(value), "")
+
+
+def _normalize_exterior_key(value: str) -> str:
+    return str(value or "").strip().lower().replace("ё", "е")
 
 
 def is_bad_name_line(line: str) -> bool:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -117,9 +118,15 @@ def scan_once(
                     listings_saved=result.listings_saved,
                     candidates_saved=result.candidates_saved,
                 )
-                response = page.goto(target.steam_market_url, wait_until="domcontentloaded", timeout=30000)
+                anomaly_settings = settings.anomaly_settings
+                response = page.goto(
+                    _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by),
+                    wait_until="domcontentloaded",
+                    timeout=30000,
+                )
                 check_steam_access(page, response=response)
                 close_cookie_banner(page)
+                _ensure_price_ascending_sort(page, anomaly_settings.sample.sort_by)
                 page.wait_for_timeout(900)
                 check_steam_access(page)
 
@@ -127,7 +134,8 @@ def scan_once(
                 seen_cards: set[str] = set()
                 previous_seen_count = -1
                 item_listings = []
-                anomaly_settings = settings.anomaly_settings
+                rejected_exact_match: list[dict[str, Any]] = []
+                rejected_exact_match_count = 0
 
                 for scroll_index in range(settings.max_scrolls + 1):
                     _emit_progress(
@@ -158,6 +166,12 @@ def scan_once(
                             row,
                             require_exact_item_match=anomaly_settings.sample.require_exact_item_match,
                         ):
+                            rejected_exact_match_count += 1
+                            if (
+                                anomaly_settings.debug.log_rejected_exact_match
+                                and len(rejected_exact_match) < anomaly_settings.debug.max_rejected_exact_match_log
+                            ):
+                                rejected_exact_match.append(_rejected_exact_match_row(listing))
                             continue
                         item_listings.append(listing)
                         if len(item_listings) >= anomaly_settings.sample.max_listings:
@@ -175,6 +189,15 @@ def scan_once(
                 item_listings = _prepare_item_listings(
                     item_listings,
                     anomaly_settings.sample.target_listings,
+                )
+                _record_exact_match_debug(
+                    repository,
+                    target,
+                    item_listings,
+                    rejected_exact_match,
+                    rejected_exact_match_count,
+                    settings,
+                    result,
                 )
                 rule = repository.get_rule_for_item(target.id)
                 historical_baselines = (
@@ -194,8 +217,10 @@ def scan_once(
                 )
                 for listing, candidate in candidates:
                     repository.save_listing(listing)
-                    repository.save_candidate(candidate)
                     result.listings_saved += 1
+                    if not _should_save_candidate(candidate, anomaly_settings):
+                        continue
+                    repository.save_candidate(candidate)
                     result.candidates_saved += 1
                     if candidate.recommendation_level in {"critical", "good"}:
                         result.alert_candidates.append(candidate)
@@ -297,6 +322,100 @@ def _prepare_item_listings(
             listing.id,
         ),
     )[:target_listings]
+
+
+def _should_save_candidate(candidate: Candidate, anomaly_settings: Any) -> bool:
+    return candidate.recommendation_level != "skip" or anomaly_settings.debug.save_skip_candidates
+
+
+def _sorted_market_url(url: str, sort_by: str) -> str:
+    if sort_by != "price_asc":
+        return url
+    parsed = urllib.parse.urlsplit(url)
+    params = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    params.update({"sort_column": "price", "sort_dir": "asc"})
+    params.setdefault("start", "0")
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urllib.parse.urlencode(params),
+            "p1_price_asc",
+        )
+    )
+
+
+def _ensure_price_ascending_sort(page, sort_by: str) -> None:
+    if sort_by != "price_asc":
+        return
+    try:
+        clicked = page.evaluate(
+            """
+            () => {
+                const labels = [
+                    "price: low", "price low", "low to high", "lowest price",
+                    "цена: по возрастанию", "цена по возрастанию", "сначала дешевые",
+                    "сначала дешёвые", "дешевле"
+                ];
+                const elements = Array.from(document.querySelectorAll("button, [role=button], a"));
+                const target = elements.find((element) => {
+                    const text = (element.innerText || element.textContent || "").toLowerCase();
+                    return text && labels.some((label) => text.includes(label));
+                });
+                if (!target) return false;
+                target.click();
+                return true;
+            }
+            """
+        )
+        if clicked:
+            page.wait_for_timeout(700)
+    except Exception:
+        return
+
+
+def _rejected_exact_match_row(listing: MarketListing) -> dict[str, Any]:
+    return {
+        "skin_name": listing.skin_name,
+        "price_rub": listing.buy_price_rub,
+        "listing_url": listing.listing_url,
+        "raw_text": listing.raw_text[:500],
+    }
+
+
+def _record_exact_match_debug(
+    repository: Repository,
+    target: ItemScanTarget,
+    item_listings: list[MarketListing],
+    rejected_exact_match: list[dict[str, Any]],
+    rejected_exact_match_count: int,
+    settings: ParserSettings,
+    result: ScanResult,
+) -> None:
+    anomaly_settings = settings.anomaly_settings
+    if not anomaly_settings.debug.log_rejected_exact_match:
+        return
+    if len(item_listings) >= anomaly_settings.sample.min_listings or not rejected_exact_match_count:
+        return
+    message = (
+        f"Мало exact-match карточек для {target.display_name}: "
+        f"{len(item_listings)} из {anomaly_settings.sample.min_listings}; "
+        f"отклонено {rejected_exact_match_count}."
+    )
+    result.message = f"{result.message}\n{message}".strip() if result.message else message
+    repository.log_user_action(
+        "steam_scan",
+        target.id,
+        "exact_match_rejected",
+        {
+            "target": target.display_name,
+            "exact_sample_size": len(item_listings),
+            "min_listings": anomaly_settings.sample.min_listings,
+            "rejected_count": rejected_exact_match_count,
+            "examples": rejected_exact_match,
+        },
+    )
 
 
 def _emit_progress(progress: ProgressCallback | None, **payload: Any) -> None:

@@ -15,7 +15,7 @@ from airmoney.anomaly.history import build_market_snapshots, ewma
 from airmoney.anomaly.scoring import calculate_real_profit, estimate_fair_price, resolve_alert_level
 from airmoney.config.models import AnomalySettings, Collection, ItemDefinition, MarketListing, ParserSettings
 from airmoney.storage.repositories import Repository
-from airmoney.steam.scanner import _evaluate_item_listings, _prepare_item_listings
+from airmoney.steam.scanner import _evaluate_item_listings, _prepare_item_listings, _should_save_candidate, _sorted_market_url
 
 
 def listing(
@@ -53,6 +53,18 @@ def test_exact_item_filter_souvenir_vs_normal():
     assert passes_item_match(souvenir, item, require_exact_item_match=True) is True
     assert passes_item_match(normal, item, require_exact_item_match=True) is False
     assert passes_item_match(normal, item, require_exact_item_match=False) is False
+
+
+def test_exact_item_filter_accepts_russian_exterior_alias():
+    russian = listing(472, title="Souvenir UMP-45 | Mechanism (Прямо с завода)")
+    item = {
+        "market_hash_name": "Souvenir UMP-45 | Mechanism (Factory New)",
+        "is_souvenir": True,
+        "is_stattrak": False,
+        "exterior": "Factory New",
+    }
+
+    assert passes_item_match(russian, item, require_exact_item_match=True) is True
 
 
 def test_local_median_discount_and_mad_robust_z():
@@ -288,6 +300,42 @@ def test_prepare_item_listings_sorts_by_price_and_limits():
     prepared = _prepare_item_listings(listings, target_listings=2)
 
     assert [listing.buy_price_rub for listing in prepared] == [472, 690]
+
+
+def test_sorted_market_url_forces_price_ascending():
+    url = _sorted_market_url(
+        "https://steamcommunity.com/market/listings/730/Souvenir%20UMP-45%20%7C%20Mechanism?foo=bar",
+        "price_asc",
+    )
+
+    assert "foo=bar" in url
+    assert "sort_column=price" in url
+    assert "sort_dir=asc" in url
+    assert url.endswith("#p1_price_asc")
+
+
+def test_skip_candidate_is_not_saved_by_default():
+    settings = ParserSettings()
+    anomaly = settings.anomaly_settings
+    skip = _evaluate_item_listings(
+        [
+            MarketListing(
+                id="listing_skip",
+                item_definition_id="ump",
+                rule_id=None,
+                skin_name="Souvenir UMP-45 | Mechanism (Factory New)",
+                buy_price_rub=1000,
+            )
+        ],
+        {"id": "ump", "market_hash_name": "Souvenir UMP-45 | Mechanism (Factory New)", "enabled": False},
+        {"enabled": True},
+        settings,
+    )[0][1]
+
+    assert skip.recommendation_level == "skip"
+    assert _should_save_candidate(skip, anomaly) is False
+    anomaly.debug.save_skip_candidates = True
+    assert _should_save_candidate(skip, anomaly) is True
 
 
 def test_history_snapshots_update_repository_baseline(tmp_path):

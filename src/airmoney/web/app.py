@@ -216,6 +216,16 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         anomaly.sample.max_listings = _int(form, "anomaly_max_listings", anomaly.sample.max_listings)
         anomaly.sample.exclude_candidate_from_baseline = _checkbox(form, "anomaly_exclude_candidate")
         anomaly.sample.require_exact_item_match = _checkbox(form, "anomaly_require_exact_match")
+        anomaly.sample.sort_by = str(form.get("anomaly_sort_by", anomaly.sample.sort_by) or "price_asc")
+        if anomaly.sample.sort_by not in {"price_asc", "none"}:
+            anomaly.sample.sort_by = "price_asc"
+        anomaly.debug.save_skip_candidates = _checkbox(form, "anomaly_save_skip_candidates")
+        anomaly.debug.log_rejected_exact_match = _checkbox(form, "anomaly_log_rejected_exact_match")
+        anomaly.debug.max_rejected_exact_match_log = _int(
+            form,
+            "anomaly_max_rejected_exact_match_log",
+            anomaly.debug.max_rejected_exact_match_log,
+        )
         anomaly.thresholds.min_local_discount_percent = _float(
             form, "anomaly_min_local_discount_percent", anomaly.thresholds.min_local_discount_percent
         )
