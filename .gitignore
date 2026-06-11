@@ -19,3 +19,7 @@ steam_market_matches.csv
 steam_market_matches.html
 steam_monitor_alert.html
 steam_seen_alerts.json
+
+vpn/sing-box.json
+vpn/*.srs
+vpn/cache.db

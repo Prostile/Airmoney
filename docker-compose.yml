@@ -1,16 +1,35 @@
 services:
   container-1:
+    image: ${SING_BOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.13}
     container_name: container-1
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./vpn/sing-box.json:/etc/sing-box/config.json:ro
+      - sing-box-data:/var/lib/sing-box
+    command: ["run", "--config", "/etc/sing-box/config.json", "--directory", "/var/lib/sing-box"]
+    expose:
+      - "8000"
+    networks:
+      - airmoney_net
+
+  airmoney-app:
+    container_name: airmoney-app
     build:
       context: .
     restart: unless-stopped
+    depends_on:
+      container-1:
+        condition: service_started
+    network_mode: "service:container-1"
     env_file:
       - .env
     volumes:
       - ./data:/app/data
       - ./config:/app/config:ro
-    expose:
-      - "8000"
     healthcheck:
       test:
         [
@@ -23,9 +42,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-    networks:
-      - airmoney_net
 
 networks:
   airmoney_net:
     name: airmoney_net
+
+volumes:
+  sing-box-data:
