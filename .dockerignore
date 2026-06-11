@@ -28,4 +28,8 @@ steam_monitor_alert.html
 steam_monitor_log.txt
 steam_seen_alerts.json
 
+vpn/sing-box.json
+vpn/*.srs
+vpn/cache.db
+
 *.patch

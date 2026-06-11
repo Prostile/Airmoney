@@ -48,7 +48,15 @@ TELEGRAM_CHAT_ID=
 docker compose up -d --build
 ```
 
-Compose создаёт контейнер `container-1`, подключает его к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
+Compose создаёт VPN-gateway контейнер `container-1`, запускает приложение в контейнере `airmoney-app` через сетевой namespace gateway, подключает `container-1` к сети `airmoney_net`, и включает автоперезапуск через `restart: unless-stopped`. Данные SQLite и кэш валют сохраняются на хосте в `./data`.
+
+Перед первым запуском Docker-режима подготовь VPN-конфиг:
+
+```bash
+cp vpn/sing-box.example.json vpn/sing-box.json
+```
+
+В `vpn/sing-box.json` укажи реальные `server`, `uuid`, `flow`, `packet_encoding` и TLS-параметры. Этот файл содержит секреты и игнорируется git.
 
 Если nginx тоже запущен в Docker, подключи nginx-контейнер к этой сети:
 
@@ -73,6 +81,13 @@ location / {
 ```bash
 docker compose ps
 docker compose logs -f container-1
+docker compose logs -f airmoney-app
+```
+
+Проверка, что исходящий трафик приложения идёт через VPN:
+
+```bash
+docker compose exec airmoney-app python -c "import urllib.request; print(urllib.request.urlopen('https://api.ipify.org', timeout=15).read().decode())"
 ```
 
 ## Основные команды
