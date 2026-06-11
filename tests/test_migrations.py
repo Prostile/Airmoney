@@ -64,6 +64,8 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
     connection = sqlite3.connect(db_path)
     settings_columns = {row[1] for row in connection.execute("PRAGMA table_info(settings)")}
     listing_columns = {row[1] for row in connection.execute("PRAGMA table_info(market_listings)")}
+    scan_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_runs)")}
     connection.close()
     assert "selected_exteriors" in settings_columns
     assert "currency_fetched_at" in listing_columns
+    assert {"total_items", "current_item_index", "current_item_name", "progress_message", "updated_at"} <= scan_run_columns

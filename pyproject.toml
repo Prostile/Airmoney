@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airmoney"
+version = "0.1.0"
+description = "Local CS skin market scanner and candidate dashboard."
+requires-python = ">=3.11"
+dependencies = [
+    "playwright",
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx",
+]
+
+[project.scripts]
+airmoney = "airmoney.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

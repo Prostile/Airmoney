@@ -132,6 +132,20 @@ class SnipingRule:
 
 
 @dataclass
+class MarketValuation:
+    id: str
+    item_definition_id: str
+    manual_target_price_rub: float | None = None
+    target_net_roi_percent: float | None = None
+    min_buy_price_rub: float | None = None
+    max_buy_price_rub: float | None = None
+    liquidity_note: str = ""
+    confidence_level: str = "medium"
+    created_at: str = field(default_factory=utc_now_iso)
+    updated_at: str = field(default_factory=utc_now_iso)
+
+
+@dataclass
 class MarketListing:
     id: str
     item_definition_id: str

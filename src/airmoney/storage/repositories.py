@@ -199,20 +199,23 @@ class Repository:
                        r.min_roi_percent,
                        r.float_min,
                        r.float_max,
+                       r.target_float_min,
+                       r.target_float_max,
                        r.pattern_ranges,
+                       r.priority,
                        r.telegram_alert_enabled,
                        (
-                           SELECT ml.buy_price_rub
+                           SELECT MIN(ml.buy_price_rub)
                            FROM market_listings ml
                            WHERE ml.item_definition_id = i.id
-                           ORDER BY ml.last_seen_at DESC
-                           LIMIT 1
+                             AND ml.is_active = 1
                        ) AS current_price_rub,
                        (
                            SELECT ml.currency_source
                            FROM market_listings ml
                            WHERE ml.item_definition_id = i.id
-                           ORDER BY ml.last_seen_at DESC
+                             AND ml.is_active = 1
+                           ORDER BY ml.buy_price_rub ASC
                            LIMIT 1
                        ) AS currency_source
                 FROM items i
@@ -399,6 +402,103 @@ class Repository:
                 params,
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def scan_target_summary(
+        self,
+        collection_id: str | None = None,
+        item_id: str | None = None,
+    ) -> dict[str, int]:
+        item_clauses: list[str] = []
+        item_params: list[Any] = []
+        collection_clauses: list[str] = []
+        collection_params: list[Any] = []
+
+        if collection_id:
+            item_clauses.append("i.collection_id = ?")
+            item_params.append(collection_id)
+            collection_clauses.append("id = ?")
+            collection_params.append(collection_id)
+        if item_id:
+            item_clauses.append("i.id = ?")
+            item_params.append(item_id)
+
+        item_where = f"WHERE {' AND '.join(item_clauses)}" if item_clauses else ""
+        collection_where = f"WHERE {' AND '.join(collection_clauses)}" if collection_clauses else ""
+        and_item_where = f"AND {' AND '.join(item_clauses)}" if item_clauses else ""
+
+        with self.connection() as connection:
+            total_collections = connection.execute(
+                f"SELECT COUNT(*) AS count FROM collections {collection_where}",
+                collection_params,
+            ).fetchone()["count"]
+            enabled_collections = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM collections
+                {collection_where + (' AND' if collection_where else 'WHERE')} enabled = 1
+                """,
+                collection_params,
+            ).fetchone()["count"]
+            total_items = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM items i
+                {item_where}
+                """,
+                item_params,
+            ).fetchone()["count"]
+            enabled_items = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM items i
+                WHERE i.enabled = 1
+                {and_item_where}
+                """,
+                item_params,
+            ).fetchone()["count"]
+            scan_targets = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM items i
+                JOIN collections c ON c.id = i.collection_id
+                WHERE i.enabled = 1
+                  AND c.enabled = 1
+                {and_item_where}
+                """,
+                item_params,
+            ).fetchone()["count"]
+            items_blocked_by_disabled_collection = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM items i
+                JOIN collections c ON c.id = i.collection_id
+                WHERE i.enabled = 1
+                  AND c.enabled = 0
+                {and_item_where}
+                """,
+                item_params,
+            ).fetchone()["count"]
+            items_blocked_by_disabled_item = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM items i
+                JOIN collections c ON c.id = i.collection_id
+                WHERE i.enabled = 0
+                  AND c.enabled = 1
+                {and_item_where}
+                """,
+                item_params,
+            ).fetchone()["count"]
+
+        return {
+            "total_collections": int(total_collections),
+            "enabled_collections": int(enabled_collections),
+            "total_items": int(total_items),
+            "enabled_items": int(enabled_items),
+            "scan_targets": int(scan_targets),
+            "items_blocked_by_disabled_collection": int(items_blocked_by_disabled_collection),
+            "items_blocked_by_disabled_item": int(items_blocked_by_disabled_item),
+        }
 
     def mark_listings_inactive_for_items(self, item_ids: list[str]) -> None:
         if not item_ids:
@@ -666,6 +766,36 @@ class Repository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+
+    def rule_stats(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    r.id AS rule_id,
+                    r.item_definition_id,
+                    i.display_name,
+                    i.market_hash_name,
+                    COUNT(DISTINCT ml.id) AS listings_found,
+                    COUNT(DISTINCT c.id) AS candidates_created,
+                    SUM(CASE WHEN c.status = 'opened' THEN 1 ELSE 0 END) AS opened_count,
+                    SUM(CASE WHEN c.status = 'bought_manually' THEN 1 ELSE 0 END) AS bought_count,
+                    SUM(CASE WHEN c.status = 'skipped' THEN 1 ELSE 0 END) AS skipped_count,
+                    SUM(CASE WHEN c.status = 'expired' THEN 1 ELSE 0 END) AS expired_count,
+                    AVG(c.estimated_roi_percent) AS avg_roi_percent,
+                    AVG(c.estimated_profit_rub) AS avg_profit_rub
+                FROM sniping_rules r
+                JOIN items i ON i.id = r.item_definition_id
+                LEFT JOIN market_listings ml ON ml.rule_id = r.id
+                LEFT JOIN candidates c ON c.rule_id = r.id
+                GROUP BY r.id
+                ORDER BY candidates_created DESC, listings_found DESC, r.priority DESC, r.id
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def dashboard_stats(self) -> dict[str, Any]:
         with self.connection() as connection:
             candidates_total = connection.execute(
@@ -791,17 +921,53 @@ class Repository:
         item_id: str | None = None,
     ) -> str:
         run_id = new_id("scan")
+        now = utc_now_iso()
         with self.connection() as connection:
             connection.execute(
                 """
                 INSERT INTO scan_runs (
-                    id, trigger, collection_id, item_id, status, started_at
+                    id, trigger, collection_id, item_id, status, started_at,
+                    progress_message, updated_at
                 )
-                VALUES (?, ?, ?, ?, 'running', ?)
+                VALUES (?, ?, ?, ?, 'running', ?, 'Подготовка скана', ?)
                 """,
-                (run_id, trigger, collection_id, item_id, utc_now_iso()),
+                (run_id, trigger, collection_id, item_id, now, now),
             )
         return run_id
+
+    def update_scan_run_progress(
+        self,
+        run_id: str,
+        total_items: int | None = None,
+        current_item_index: int | None = None,
+        current_item_name: str | None = None,
+        progress_message: str | None = None,
+        scanned_items: int | None = None,
+        listings_saved: int | None = None,
+        candidates_saved: int | None = None,
+    ) -> None:
+        updates: list[str] = ["updated_at = ?"]
+        params: list[Any] = [utc_now_iso()]
+        values = {
+            "total_items": total_items,
+            "current_item_index": current_item_index,
+            "current_item_name": current_item_name[:500] if current_item_name is not None else None,
+            "progress_message": progress_message[:1000] if progress_message is not None else None,
+            "scanned_items": scanned_items,
+            "listings_saved": listings_saved,
+            "candidates_saved": candidates_saved,
+        }
+        for column, value in values.items():
+            if value is None:
+                continue
+            updates.append(f"{column} = ?")
+            params.append(value)
+        params.append(run_id)
+        with self.connection() as connection:
+            connection.execute(
+                f"UPDATE scan_runs SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
 
     def finish_scan_run(
         self,
@@ -813,12 +979,19 @@ class Repository:
         alerts_sent: int = 0,
         error: str = "",
     ) -> None:
+        message = error or ("Скан завершён." if status == "success" else f"Скан: {status}.")
         with self.connection() as connection:
             connection.execute(
                 """
                 UPDATE scan_runs
                 SET status = ?,
                     finished_at = ?,
+                    current_item_index = CASE
+                        WHEN ? = 'success' AND total_items > 0 THEN total_items
+                        ELSE current_item_index
+                    END,
+                    progress_message = ?,
+                    updated_at = ?,
                     scanned_items = ?,
                     listings_saved = ?,
                     candidates_saved = ?,
@@ -828,6 +1001,9 @@ class Repository:
                 """,
                 (
                     status,
+                    utc_now_iso(),
+                    status,
+                    message[:1000],
                     utc_now_iso(),
                     int(scanned_items),
                     int(listings_saved),

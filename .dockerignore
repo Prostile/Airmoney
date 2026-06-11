@@ -1,21 +1,31 @@
+.git
+.gitignore
+.dockerignore
+
 .env
+.env.*
+!.env.example
+
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+venv/
+.venv/
 
 data/*.sqlite3
+data/*.db
 data/*.log
 data/*.pid
 data/currency_cache.json
 data/*_smoke.*
 
-venv/
-*.log
-*.db
-.venv/
-data/*.db
-steam_monitor_log.txt
 steam_market_matches.csv
 steam_market_matches.html
 steam_monitor_alert.html
+steam_monitor_log.txt
 steam_seen_alerts.json
+
+*.patch

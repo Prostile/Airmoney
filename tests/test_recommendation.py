@@ -75,3 +75,24 @@ def test_telegram_alert_template_is_short():
     assert "UMP-45 | Green Swirl" in text
     assert "https://example.test/candidates" in text
     assert "Покупка" in text
+
+
+def test_target_float_adds_scoring_reason():
+    candidate = evaluate_listing(
+        listing_id="listing_target_float",
+        buy_price_rub=1000,
+        float_value=0.015,
+        pattern=10,
+        rule={
+            "id": "rule1",
+            "enabled": 1,
+            "target_resale_price_rub": 1170,
+            "float_min": 0.01,
+            "float_max": 0.02,
+            "target_float_min": 0.014,
+            "target_float_max": 0.016,
+        },
+        settings=settings(),
+    )
+    assert "целевой диапазон" in candidate.recommendation_reason
+    assert candidate.recommendation_score > 0

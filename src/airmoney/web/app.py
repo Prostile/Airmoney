@@ -79,6 +79,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 "stats": repository.dashboard_stats(),
                 "latest_scan": repository.latest_scan_run(),
                 "scan_runs": repository.list_scan_runs(limit=8),
+                "scan_summary": repository.scan_target_summary(),
                 "monitor": app.state.monitor.snapshot(),
                 "rates": cached_rates,
                 "message": request.query_params.get("message", ""),
@@ -100,6 +101,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
             "last_monitor_error": monitor.last_error,
             "latest_scan": latest_scan,
             "stats": stats,
+            "scan_summary": repository.scan_target_summary(),
             "currency": rates,
         }
 
@@ -107,10 +109,10 @@ def create_app(repo: Repository | None = None) -> FastAPI:
     def scan_now(_: str = Depends(require_auth)) -> RedirectResponse:
         try:
             result = run_scan_cycle(repository, trigger="web")
-            message = f"scan: {result.scanned_items} items, {result.listings_saved} listings"
+            message = result.message or f"scan: {result.scanned_items} items, {result.listings_saved} listings"
         except Exception as error:
             message = f"scan error: {error}"
-        return RedirectResponse(f"/dashboard?message={message}", status_code=303)
+        return RedirectResponse(f"/dashboard?message={urllib.parse.quote(message)}", status_code=303)
 
     @app.post("/monitor/start")
     def monitor_start(_: str = Depends(require_auth)) -> RedirectResponse:
@@ -150,6 +152,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 "request": request,
                 "active": "scan_runs",
                 "scan_runs": repository.list_scan_runs(limit=100),
+                "scan_summary": repository.scan_target_summary(),
                 "message": request.query_params.get("message", ""),
             },
         )
@@ -257,10 +260,10 @@ def create_app(repo: Repository | None = None) -> FastAPI:
     def scan_collection(collection_id: str, _: str = Depends(require_auth)) -> RedirectResponse:
         try:
             result = run_scan_cycle(repository, collection_id=collection_id, trigger="web_collection")
-            message = f"scan_{result.scanned_items}_{result.listings_saved}"
+            message = result.message or f"scan_{result.scanned_items}_{result.listings_saved}"
         except Exception as error:
-            message = "scan_error_" + urllib.parse.quote(str(error)[:80])
-        return RedirectResponse(f"/collections?message={message}", status_code=303)
+            message = "scan_error_" + str(error)[:80]
+        return RedirectResponse(f"/collections?message={urllib.parse.quote(message)}", status_code=303)
 
     @app.get("/items", response_class=HTMLResponse)
     def items_page(request: Request, collection_id: str | None = None, _: str = Depends(require_auth)):
@@ -388,6 +391,8 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 min_roi_percent=_optional_float(form, "min_roi_percent"),
                 float_min=_optional_float(form, "float_min"),
                 float_max=_optional_float(form, "float_max"),
+                target_float_min=_optional_float(form, "target_float_min"),
+                target_float_max=_optional_float(form, "target_float_max"),
                 pattern_ranges=str(form.get("pattern_ranges", "") or ""),
                 priority=_int(form, "priority", 0),
                 telegram_alert_enabled=_checkbox(form, "telegram_alert_enabled"),
@@ -401,10 +406,10 @@ def create_app(repo: Repository | None = None) -> FastAPI:
     def scan_item(item_id: str, _: str = Depends(require_auth)) -> RedirectResponse:
         try:
             result = run_scan_cycle(repository, item_id=item_id, trigger="web_item")
-            message = f"scan_{result.scanned_items}_{result.listings_saved}"
+            message = result.message or f"scan_{result.scanned_items}_{result.listings_saved}"
         except Exception as error:
-            message = "scan_error_" + urllib.parse.quote(str(error)[:80])
-        return RedirectResponse(f"/items?message={message}", status_code=303)
+            message = "scan_error_" + str(error)[:80]
+        return RedirectResponse(f"/items?message={urllib.parse.quote(message)}", status_code=303)
 
     @app.get("/listings", response_class=HTMLResponse)
     def listings_page(
@@ -532,6 +537,20 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 "request": request,
                 "active": "candidates",
                 "candidates": repository.list_candidates(limit=100000),
+            },
+        )
+
+
+    @app.get("/rule-stats", response_class=HTMLResponse)
+    def rule_stats_page(request: Request, _: str = Depends(require_auth)):
+        return templates.TemplateResponse(
+            request,
+            "rule_stats.html",
+            {
+                "request": request,
+                "active": "rule_stats",
+                "rows": repository.rule_stats(),
+                "message": request.query_params.get("message", ""),
             },
         )
 

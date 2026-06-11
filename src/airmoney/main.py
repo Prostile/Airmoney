@@ -103,10 +103,13 @@ def main(argv: list[str] | None = None) -> int:
             item_id=args.item_id,
             trigger="cli",
         )
-        print(
-            f"Скан завершён: предметов {result.scanned_items}, "
-            f"лотов {result.listings_saved}, кандидатов {result.candidates_saved}."
-        )
+        if result.message:
+            print(f"Скан пропущен: {result.message}")
+        else:
+            print(
+                f"Скан завершён: предметов {result.scanned_items}, "
+                f"лотов {result.listings_saved}, кандидатов {result.candidates_saved}."
+            )
         return 0
 
     if args.command == "monitor":

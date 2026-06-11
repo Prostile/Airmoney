@@ -182,6 +182,11 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             started_at TEXT NOT NULL,
             finished_at TEXT,
+            total_items INTEGER NOT NULL DEFAULT 0,
+            current_item_index INTEGER NOT NULL DEFAULT 0,
+            current_item_name TEXT NOT NULL DEFAULT '',
+            progress_message TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT '',
             scanned_items INTEGER NOT NULL DEFAULT 0,
             listings_saved INTEGER NOT NULL DEFAULT 0,
             candidates_saved INTEGER NOT NULL DEFAULT 0,
@@ -207,6 +212,17 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         connection.execute(
             "ALTER TABLE market_listings ADD COLUMN currency_fetched_at TEXT NOT NULL DEFAULT ''"
         )
+    scan_run_columns = _table_columns(connection, "scan_runs")
+    scan_run_defaults = {
+        "total_items": "INTEGER NOT NULL DEFAULT 0",
+        "current_item_index": "INTEGER NOT NULL DEFAULT 0",
+        "current_item_name": "TEXT NOT NULL DEFAULT ''",
+        "progress_message": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column, definition in scan_run_defaults.items():
+        if column not in scan_run_columns:
+            connection.execute(f"ALTER TABLE scan_runs ADD COLUMN {column} {definition}")
 
 
 def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:

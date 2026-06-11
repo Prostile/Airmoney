@@ -7,6 +7,28 @@
   </div>
 </section>
 
+<section class="metrics">
+  <div class="metric"><span>Всего коллекций</span><strong>{{ scan_summary.total_collections }}</strong></div>
+  <div class="metric"><span>Включено коллекций</span><strong>{{ scan_summary.enabled_collections }}</strong></div>
+  <div class="metric"><span>Всего предметов</span><strong>{{ scan_summary.total_items }}</strong></div>
+  <div class="metric"><span>Включено предметов</span><strong>{{ scan_summary.enabled_items }}</strong></div>
+  <div class="metric"><span>Целей скана</span><strong>{{ scan_summary.scan_targets }}</strong></div>
+  <div class="metric"><span>Блокирует коллекция</span><strong>{{ scan_summary.items_blocked_by_disabled_collection }}</strong></div>
+</section>
+
+{% if scan_summary.scan_targets == 0 %}
+<div class="notice warning">
+  <strong>Текущая очередь скана пуста.</strong>
+  {% if scan_summary.enabled_collections == 0 %}
+    Включи хотя бы одну коллекцию на странице <a href="/collections">Коллекции</a>.
+  {% elif scan_summary.enabled_items == 0 %}
+    Включи хотя бы один предмет на странице <a href="/items">Предметы</a>.
+  {% else %}
+    Проверь включение коллекций и предметов.
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="table-wrap wide">
   <table>
     <thead>
