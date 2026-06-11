@@ -17,7 +17,15 @@ from fastapi.templating import Jinja2Templates
 
 from airmoney.config.catalog_import import import_catalog_text
 from airmoney.config.import_export import export_config, import_config_text
-from airmoney.config.models import CANDIDATE_STATUSES, Collection, EXTERIORS, ItemDefinition, ParserSettings, SnipingRule, to_bool
+from airmoney.config.models import (
+    CANDIDATE_STATUSES,
+    Collection,
+    EXTERIORS,
+    ItemDefinition,
+    ParserSettings,
+    SnipingRule,
+    to_bool,
+)
 from airmoney.currency.cache import load_cached_rates
 from airmoney.currency.steam_currency import CurrencyService
 from airmoney.paths import PACKAGE_ROOT
@@ -159,13 +167,16 @@ def create_app(repo: Repository | None = None) -> FastAPI:
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, _: str = Depends(require_auth)):
+        settings = repository.get_settings()
         return templates.TemplateResponse(
             request,
             "parser_settings.html",
             {
                 "request": request,
                 "active": "settings",
-                "settings": repository.get_settings(),
+                "settings": settings,
+                "anomaly": settings.anomaly_settings,
+                "telegram_alert": settings.telegram_alert_settings,
                 "exteriors": EXTERIORS,
                 "exterior_field": _exterior_field,
                 "message": request.query_params.get("message", ""),
@@ -175,6 +186,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
     @app.post("/settings")
     async def save_settings(request: Request, _: str = Depends(require_auth)) -> RedirectResponse:
         form = await _form(request)
+        current_settings = repository.get_settings()
         settings = ParserSettings(
             enabled=_checkbox(form, "enabled"),
             check_interval_seconds=_int(form, "check_interval_seconds", 300),
@@ -197,6 +209,67 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         settings.set_selected_exteriors(
             [exterior for exterior in EXTERIORS if _checkbox(form, _exterior_field(exterior))]
         )
+        anomaly = current_settings.anomaly_settings
+        anomaly.enabled = _checkbox(form, "anomaly_enabled")
+        anomaly.sample.min_listings = _int(form, "anomaly_min_listings", anomaly.sample.min_listings)
+        anomaly.sample.target_listings = _int(form, "anomaly_target_listings", anomaly.sample.target_listings)
+        anomaly.sample.max_listings = _int(form, "anomaly_max_listings", anomaly.sample.max_listings)
+        anomaly.sample.exclude_candidate_from_baseline = _checkbox(form, "anomaly_exclude_candidate")
+        anomaly.sample.require_exact_item_match = _checkbox(form, "anomaly_require_exact_match")
+        anomaly.thresholds.min_local_discount_percent = _float(
+            form, "anomaly_min_local_discount_percent", anomaly.thresholds.min_local_discount_percent
+        )
+        anomaly.thresholds.min_float_peer_discount_percent = _float(
+            form, "anomaly_min_float_peer_discount_percent", anomaly.thresholds.min_float_peer_discount_percent
+        )
+        anomaly.thresholds.min_net_profit_rub = _float(
+            form, "anomaly_min_net_profit_rub", anomaly.thresholds.min_net_profit_rub
+        )
+        anomaly.thresholds.min_roi_percent = _float(
+            form, "anomaly_min_roi_percent", anomaly.thresholds.min_roi_percent
+        )
+        anomaly.thresholds.critical_score = _float(form, "anomaly_critical_score", anomaly.thresholds.critical_score)
+        anomaly.thresholds.good_score = _float(form, "anomaly_good_score", anomaly.thresholds.good_score)
+        anomaly.thresholds.watch_score = _float(form, "anomaly_watch_score", anomaly.thresholds.watch_score)
+        anomaly.scoring.local_discount_weight = _float(
+            form, "anomaly_local_discount_weight", anomaly.scoring.local_discount_weight
+        )
+        anomaly.scoring.float_peer_discount_weight = _float(
+            form, "anomaly_float_peer_discount_weight", anomaly.scoring.float_peer_discount_weight
+        )
+        anomaly.scoring.historical_discount_weight = _float(
+            form, "anomaly_historical_discount_weight", anomaly.scoring.historical_discount_weight
+        )
+        anomaly.scoring.float_quality_weight = _float(
+            form, "anomaly_float_quality_weight", anomaly.scoring.float_quality_weight
+        )
+        anomaly.nearest_neighbors.enabled = _checkbox(form, "anomaly_neighbors_enabled")
+        anomaly.nearest_neighbors.k = _int(form, "anomaly_neighbors_k", anomaly.nearest_neighbors.k)
+        anomaly.nearest_neighbors.min_neighbors = _int(
+            form, "anomaly_neighbors_min_neighbors", anomaly.nearest_neighbors.min_neighbors
+        )
+        anomaly.nearest_neighbors.max_float_distance = _float(
+            form, "anomaly_neighbors_max_float_distance", anomaly.nearest_neighbors.max_float_distance
+        )
+        settings.set_anomaly_settings(anomaly)
+
+        telegram_alert = current_settings.telegram_alert_settings
+        telegram_alert.message_format = str(form.get("telegram_message_format", telegram_alert.message_format) or "compact")
+        telegram_alert.include_link = _checkbox(form, "telegram_include_link")
+        telegram_alert.include_pattern = _checkbox(form, "telegram_include_pattern")
+        telegram_alert.include_sample_stats = _checkbox(form, "telegram_include_sample_stats")
+        telegram_alert.include_reasons = _checkbox(form, "telegram_include_reasons")
+        telegram_alert.batch_alerts = _checkbox(form, "telegram_batch_alerts")
+        telegram_alert.batch_interval_seconds = _int(
+            form, "telegram_batch_interval_seconds", telegram_alert.batch_interval_seconds
+        )
+        telegram_alert.max_alerts_per_message = _int(
+            form, "telegram_max_alerts_per_message", telegram_alert.max_alerts_per_message
+        )
+        telegram_alert.max_message_length = _int(
+            form, "telegram_max_message_length", telegram_alert.max_message_length
+        )
+        settings.set_telegram_alert_settings(telegram_alert)
         repository.save_settings(settings)
         repository.log_user_action("settings", "1", "update")
         return RedirectResponse("/settings?message=saved", status_code=303)
@@ -448,6 +521,10 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         item_id: str | None = None,
         min_profit: float | None = None,
         min_roi: float | None = None,
+        min_score: float | None = None,
+        float_bucket: str | None = None,
+        souvenir_only: bool = False,
+        exact_item_only: bool = False,
         date_from: str | None = None,
         date_to: str | None = None,
         sort: str = "time",
@@ -468,6 +545,10 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                     item_id=item_id,
                     min_profit=min_profit,
                     min_roi=min_roi,
+                    min_score=min_score,
+                    float_bucket=float_bucket,
+                    souvenir_only=souvenir_only,
+                    exact_item_only=exact_item_only,
                     date_from=date_from,
                     date_to=date_to,
                     limit=settings.web_table_limit,
@@ -475,6 +556,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 ),
                 "collections": repository.list_collections(),
                 "items": repository.list_items(collection_id),
+                "float_buckets": settings.anomaly_settings.float_buckets,
                 "filters": dict(request.query_params),
                 "message": request.query_params.get("message", ""),
             },

@@ -66,6 +66,9 @@ def test_import_valid_config_and_export(tmp_path):
     exported = export_config(repo)
     assert "ump_green_swirl_fn" in exported
     assert "Factory New" in exported
+    assert "anomaly:" in exported
+    assert "float_buckets:" in exported
+    assert "message_format: compact" in exported
 
 
 def test_invalid_import_does_not_replace_current_config(tmp_path):

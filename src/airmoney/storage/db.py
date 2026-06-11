@@ -17,10 +17,13 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
 
 
 def initialize_database(db_path: str | Path | None = None) -> None:
-    with connect(db_path) as connection:
+    connection = connect(db_path)
+    try:
         apply_schema(connection)
         apply_lightweight_migrations(connection)
         ensure_default_settings(connection)
+    finally:
+        connection.close()
 
 
 def apply_schema(connection: sqlite3.Connection) -> None:
@@ -46,6 +49,8 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             default_min_profit_rub REAL NOT NULL,
             default_min_roi_percent REAL NOT NULL,
             selected_exteriors TEXT NOT NULL,
+            anomaly_config TEXT NOT NULL DEFAULT '{}',
+            telegram_config TEXT NOT NULL DEFAULT '{}',
             updated_at TEXT NOT NULL
         );
 
@@ -137,6 +142,22 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             recommendation_level TEXT NOT NULL,
             recommendation_score REAL NOT NULL,
             recommendation_reason TEXT NOT NULL,
+            analysis_mode TEXT NOT NULL DEFAULT 'legacy',
+            alert_level TEXT NOT NULL DEFAULT '',
+            anomaly_score REAL,
+            fair_price_rub REAL,
+            local_median_rub REAL,
+            float_peer_median_rub REAL,
+            historical_baseline_rub REAL,
+            local_discount_percent REAL,
+            float_peer_discount_percent REAL,
+            historical_discount_percent REAL,
+            robust_z REAL,
+            float_bucket TEXT NOT NULL DEFAULT '',
+            sample_size INTEGER NOT NULL DEFAULT 0,
+            neighbor_count INTEGER NOT NULL DEFAULT 0,
+            anomaly_reasons TEXT NOT NULL DEFAULT '',
+            parsed_at TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'new',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -196,6 +217,36 @@ def apply_schema(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_scan_runs_started
             ON scan_runs(started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS market_snapshot (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id TEXT NOT NULL,
+            scan_time TEXT NOT NULL,
+            float_bucket TEXT NOT NULL,
+            sample_size INTEGER NOT NULL,
+            floor_price_rub REAL,
+            q10_price_rub REAL,
+            q25_price_rub REAL,
+            median_price_rub REAL,
+            q75_price_rub REAL,
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_market_snapshot_item_bucket
+            ON market_snapshot(item_id, float_bucket, scan_time);
+
+        CREATE TABLE IF NOT EXISTS market_baseline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id TEXT NOT NULL,
+            float_bucket TEXT NOT NULL,
+            rolling_median_rub REAL,
+            rolling_q25_rub REAL,
+            rolling_floor_rub REAL,
+            sample_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            UNIQUE(item_id, float_bucket),
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        );
         """
     )
 
@@ -207,6 +258,17 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         connection.execute(
             f"ALTER TABLE settings ADD COLUMN selected_exteriors TEXT NOT NULL DEFAULT '{default}'"
         )
+    settings_defaults = {
+        "anomaly_config": ParserSettings().anomaly_config,
+        "telegram_config": ParserSettings().telegram_config,
+    }
+    settings_columns = _table_columns(connection, "settings")
+    for column, default_value in settings_defaults.items():
+        if column not in settings_columns:
+            escaped = default_value.replace("'", "''")
+            connection.execute(
+                f"ALTER TABLE settings ADD COLUMN {column} TEXT NOT NULL DEFAULT '{escaped}'"
+            )
     listing_columns = _table_columns(connection, "market_listings")
     if "currency_fetched_at" not in listing_columns:
         connection.execute(
@@ -223,6 +285,35 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
     for column, definition in scan_run_defaults.items():
         if column not in scan_run_columns:
             connection.execute(f"ALTER TABLE scan_runs ADD COLUMN {column} {definition}")
+
+    candidate_columns = _table_columns(connection, "candidates")
+    candidate_defaults = {
+        "analysis_mode": "TEXT NOT NULL DEFAULT 'legacy'",
+        "alert_level": "TEXT NOT NULL DEFAULT ''",
+        "anomaly_score": "REAL",
+        "fair_price_rub": "REAL",
+        "local_median_rub": "REAL",
+        "float_peer_median_rub": "REAL",
+        "historical_baseline_rub": "REAL",
+        "local_discount_percent": "REAL",
+        "float_peer_discount_percent": "REAL",
+        "historical_discount_percent": "REAL",
+        "robust_z": "REAL",
+        "float_bucket": "TEXT NOT NULL DEFAULT ''",
+        "sample_size": "INTEGER NOT NULL DEFAULT 0",
+        "neighbor_count": "INTEGER NOT NULL DEFAULT 0",
+        "anomaly_reasons": "TEXT NOT NULL DEFAULT ''",
+        "parsed_at": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column, definition in candidate_defaults.items():
+        if column not in candidate_columns:
+            connection.execute(f"ALTER TABLE candidates ADD COLUMN {column} {definition}")
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_candidates_anomaly
+            ON candidates(anomaly_score, float_bucket, estimated_profit_rub)
+        """
+    )
 
 
 def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
@@ -244,7 +335,8 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             currency_cache_ttl_seconds, fallback_usd_to_rub, fallback_eur_to_rub,
             telegram_alerts_enabled, telegram_min_alert_level, web_table_limit,
             default_roi_percent, default_market_fee_percent, default_min_profit_rub,
-            default_min_roi_percent, selected_exteriors, updated_at
+            default_min_roi_percent, selected_exteriors, anomaly_config,
+            telegram_config, updated_at
         )
         VALUES (
             1, :enabled, :check_interval_seconds, :headless, :max_scrolls,
@@ -252,7 +344,8 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             :currency_cache_ttl_seconds, :fallback_usd_to_rub, :fallback_eur_to_rub,
             :telegram_alerts_enabled, :telegram_min_alert_level, :web_table_limit,
             :default_roi_percent, :default_market_fee_percent, :default_min_profit_rub,
-            :default_min_roi_percent, :selected_exteriors, :updated_at
+            :default_min_roi_percent, :selected_exteriors, :anomaly_config,
+            :telegram_config, :updated_at
         )
         """,
         {
@@ -274,6 +367,8 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             "default_min_profit_rub": settings.default_min_profit_rub,
             "default_min_roi_percent": settings.default_min_roi_percent,
             "selected_exteriors": settings.selected_exteriors,
+            "anomaly_config": settings.anomaly_config,
+            "telegram_config": settings.telegram_config,
             "updated_at": settings.updated_at,
         },
     )

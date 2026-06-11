@@ -120,6 +120,166 @@
     </div>
 
     <div class="col-12">
+      <div class="card form-card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-radar-2 me-2"></i>Anomaly detection</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-4">
+              <label class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="anomaly_enabled" {% if anomaly.enabled %}checked{% endif %}>
+                <span class="form-check-label">Использовать anomaly engine</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="anomaly_require_exact_match" {% if anomaly.sample.require_exact_item_match %}checked{% endif %}>
+                <span class="form-check-label">Точный match предмета</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="anomaly_exclude_candidate" {% if anomaly.sample.exclude_candidate_from_baseline %}checked{% endif %}>
+                <span class="form-check-label">Исключать candidate из baseline</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Min listings</label>
+              <input class="form-control" type="number" name="anomaly_min_listings" value="{{ anomaly.sample.min_listings }}" min="1">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Target listings</label>
+              <input class="form-control" type="number" name="anomaly_target_listings" value="{{ anomaly.sample.target_listings }}" min="1">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Max listings</label>
+              <input class="form-control" type="number" name="anomaly_max_listings" value="{{ anomaly.sample.max_listings }}" min="1">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Min local discount, %</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_min_local_discount_percent" value="{{ anomaly.thresholds.min_local_discount_percent }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Min float discount, %</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_min_float_peer_discount_percent" value="{{ anomaly.thresholds.min_float_peer_discount_percent }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Min net profit</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_min_net_profit_rub" value="{{ anomaly.thresholds.min_net_profit_rub }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Min ROI, %</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_min_roi_percent" value="{{ anomaly.thresholds.min_roi_percent }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Critical score</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_critical_score" value="{{ anomaly.thresholds.critical_score }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Good score</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_good_score" value="{{ anomaly.thresholds.good_score }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Watch score</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_watch_score" value="{{ anomaly.thresholds.watch_score }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Local weight</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_local_discount_weight" value="{{ anomaly.scoring.local_discount_weight }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Float peer weight</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_float_peer_discount_weight" value="{{ anomaly.scoring.float_peer_discount_weight }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">History weight</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_historical_discount_weight" value="{{ anomaly.scoring.historical_discount_weight }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Float quality weight</label>
+              <input class="form-control" type="number" step="0.01" name="anomaly_float_quality_weight" value="{{ anomaly.scoring.float_quality_weight }}" min="0">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" name="anomaly_neighbors_enabled" {% if anomaly.nearest_neighbors.enabled %}checked{% endif %}>
+                <span class="form-check-label">Float neighbors</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Neighbors K</label>
+              <input class="form-control" type="number" name="anomaly_neighbors_k" value="{{ anomaly.nearest_neighbors.k }}" min="1">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Min neighbors</label>
+              <input class="form-control" type="number" name="anomaly_neighbors_min_neighbors" value="{{ anomaly.nearest_neighbors.min_neighbors }}" min="1">
+            </div>
+            <div class="col-12 col-md-4 col-xl-2">
+              <label class="form-label">Max float distance</label>
+              <input class="form-control" type="number" step="0.001" name="anomaly_neighbors_max_float_distance" value="{{ anomaly.nearest_neighbors.max_float_distance }}" min="0">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card form-card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-brand-telegram me-2"></i>Telegram digest</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-3">
+              <label class="form-label">Формат</label>
+              <select class="form-select" name="telegram_message_format">
+                <option value="compact" {% if telegram_alert.message_format == "compact" %}selected{% endif %}>compact</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" name="telegram_batch_alerts" {% if telegram_alert.batch_alerts %}checked{% endif %}>
+                <span class="form-check-label">Batch alerts</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" name="telegram_include_link" {% if telegram_alert.include_link %}checked{% endif %}>
+                <span class="form-check-label">Ссылка</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" name="telegram_include_pattern" {% if telegram_alert.include_pattern %}checked{% endif %}>
+                <span class="form-check-label">Pattern</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="telegram_include_sample_stats" {% if telegram_alert.include_sample_stats %}checked{% endif %}>
+                <span class="form-check-label">Sample stats</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="telegram_include_reasons" {% if telegram_alert.include_reasons %}checked{% endif %}>
+                <span class="form-check-label">Reasons</span>
+              </label>
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label">Batch interval</label>
+              <input class="form-control" type="number" name="telegram_batch_interval_seconds" value="{{ telegram_alert.batch_interval_seconds }}" min="1">
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label">Max alerts</label>
+              <input class="form-control" type="number" name="telegram_max_alerts_per_message" value="{{ telegram_alert.max_alerts_per_message }}" min="1">
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label">Max length</label>
+              <input class="form-control" type="number" name="telegram_max_message_length" value="{{ telegram_alert.max_message_length }}" min="1000">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
       <div class="card">
         <div class="card-header"><h2 class="card-title"><i class="ti ti-stars me-2"></i>Состояния для новых предметов</h2></div>
         <div class="card-body">

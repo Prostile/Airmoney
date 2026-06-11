@@ -5,7 +5,12 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from airmoney.config.models import Candidate
+from airmoney.anomaly.candidates import candidate_from_anomaly_result
+from airmoney.anomaly.history import build_market_snapshots
+from airmoney.anomaly.matching import passes_item_match
+from airmoney.anomaly.models import parsed_listing_from_market_listing
+from airmoney.anomaly.analyzer import analyze_listings
+from airmoney.config.models import Candidate, MarketListing, ParserSettings
 from airmoney.currency.steam_currency import CurrencyService
 from airmoney.recommendation.engine import evaluate_listing
 from airmoney.storage.repositories import Repository
@@ -121,6 +126,8 @@ def scan_once(
                 page_item_name = get_page_item_name(page)
                 seen_cards: set[str] = set()
                 previous_seen_count = -1
+                item_listings = []
+                anomaly_settings = settings.anomaly_settings
 
                 for scroll_index in range(settings.max_scrolls + 1):
                     _emit_progress(
@@ -145,28 +152,59 @@ def scan_once(
                         listing = parse_card(card, target, rates, page_item_name)
                         if listing is None:
                             continue
-                        repository.save_listing(listing)
-                        rule = repository.get_rule_for_item(target.id)
-                        candidate = evaluate_listing(
-                            listing_id=listing.id,
-                            buy_price_rub=listing.buy_price_rub,
-                            float_value=listing.float_value,
-                            pattern=listing.pattern,
-                            rule=rule,
-                            settings=settings,
-                        )
-                        repository.save_candidate(candidate)
-                        result.listings_saved += 1
-                        result.candidates_saved += 1
-                        if candidate.recommendation_level in {"critical", "good"}:
-                            result.alert_candidates.append(candidate)
+                        parsed_listing = parsed_listing_from_market_listing(listing, row)
+                        if not passes_item_match(
+                            parsed_listing,
+                            row,
+                            require_exact_item_match=anomaly_settings.sample.require_exact_item_match,
+                        ):
+                            continue
+                        item_listings.append(listing)
+                        if len(item_listings) >= anomaly_settings.sample.max_listings:
+                            break
 
                     if len(seen_cards) == previous_seen_count:
                         break
                     previous_seen_count = len(seen_cards)
+                    if len(item_listings) >= anomaly_settings.sample.target_listings:
+                        break
                     if scroll_index < settings.max_scrolls:
                         page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.85));")
                         page.wait_for_timeout(250)
+
+                rule = repository.get_rule_for_item(target.id)
+                historical_baselines = (
+                    repository.list_market_baselines(target.id)
+                    if settings.anomaly_settings.history.enabled
+                    else {}
+                )
+                candidates = _evaluate_item_listings(
+                    item_listings,
+                    row,
+                    rule,
+                    settings,
+                    historical_baselines=historical_baselines,
+                )
+                for listing, candidate in candidates:
+                    repository.save_listing(listing)
+                    repository.save_candidate(candidate)
+                    result.listings_saved += 1
+                    result.candidates_saved += 1
+                    if candidate.recommendation_level in {"critical", "good"}:
+                        result.alert_candidates.append(candidate)
+                if settings.anomaly_settings.history.enabled and item_listings:
+                    parsed_for_history = [
+                        parsed_listing_from_market_listing(listing, row)
+                        for listing in item_listings
+                    ]
+                    repository.save_market_snapshots(
+                        build_market_snapshots(
+                            target.id,
+                            parsed_for_history,
+                            settings.anomaly_settings.float_buckets,
+                        ),
+                        alpha=settings.anomaly_settings.history.ewma_alpha,
+                    )
 
                 result.scanned_items += 1
                 _emit_progress(
@@ -189,6 +227,56 @@ def scan_once(
 
     repository.expire_candidates_for_inactive_listings()
     return result
+
+
+def _evaluate_item_listings(
+    listings: list[MarketListing],
+    item: dict[str, Any],
+    rule: dict[str, Any] | None,
+    settings: ParserSettings,
+    historical_baselines: dict[str, float] | None = None,
+) -> list[tuple[MarketListing, Candidate]]:
+    if not listings:
+        return []
+
+    if not settings.anomaly_settings.enabled:
+        return [
+            (
+                listing,
+                evaluate_listing(
+                    listing_id=listing.id,
+                    buy_price_rub=listing.buy_price_rub,
+                    float_value=listing.float_value,
+                    pattern=listing.pattern,
+                    rule=rule,
+                    settings=settings,
+                ),
+            )
+            for listing in listings
+        ]
+
+    parsed_listings = [parsed_listing_from_market_listing(listing, item) for listing in listings]
+    anomaly_results = analyze_listings(
+        parsed_listings,
+        item,
+        rule,
+        settings,
+        historical_baselines=historical_baselines,
+    )
+    pairs: list[tuple[MarketListing, Candidate]] = []
+    for listing, anomaly_result in zip(listings, anomaly_results, strict=False):
+        pairs.append(
+            (
+                listing,
+                candidate_from_anomaly_result(
+                    anomaly_result,
+                    listing_id=listing.id,
+                    rule_id=listing.rule_id or (rule.get("id") if rule else None),
+                    market_fee_percent=settings.default_market_fee_percent,
+                ),
+            )
+        )
+    return pairs
 
 
 def _emit_progress(progress: ProgressCallback | None, **payload: Any) -> None:

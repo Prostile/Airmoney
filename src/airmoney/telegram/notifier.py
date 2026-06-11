@@ -8,7 +8,7 @@ from pathlib import Path
 from airmoney.config.models import ParserSettings
 from airmoney.recommendation.scoring import should_alert
 from airmoney.storage.repositories import Repository
-from airmoney.telegram.templates import candidate_alert
+from airmoney.telegram.templates import batch_alert, candidate_alert, should_send_immediate
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -71,16 +71,35 @@ class TelegramNotifier:
             return 0
         sent = 0
         rates = self.repo.latest_currency_rate()
+        alert_settings = settings.telegram_alert_settings
+        batch_candidates: list[dict] = []
         for candidate in self.repo.list_unsent_alert_candidates(limit=limit):
             if not should_alert(candidate["recommendation_level"], settings.telegram_min_alert_level):
                 continue
             if rates:
                 candidate["currency_rate_source"] = candidate.get("currency_source") or rates["source"]
                 candidate["currency_fetched_at"] = candidate.get("currency_fetched_at") or rates["fetched_at"]
+            if alert_settings.batch_alerts and not should_send_immediate(candidate):
+                batch_candidates.append(candidate)
+                continue
             ok, error = send_telegram_message(
-                candidate_alert(candidate, f"{self.site_url}/candidates")
+                candidate_alert(
+                    candidate,
+                    f"{self.site_url}/candidates",
+                    include_link=alert_settings.include_link,
+                    include_pattern=alert_settings.include_pattern,
+                )[: alert_settings.max_message_length]
             )
             self.repo.log_telegram_alert(candidate["id"], "sent" if ok else "error", error)
             if ok:
                 sent += 1
+        if batch_candidates:
+            limited = batch_candidates[: alert_settings.max_alerts_per_message]
+            ok, error = send_telegram_message(
+                batch_alert(limited, f"{self.site_url}/candidates")[: alert_settings.max_message_length]
+            )
+            for candidate in limited:
+                self.repo.log_telegram_alert(candidate["id"], "sent" if ok else "error", error)
+            if ok:
+                sent += len(limited)
         return sent
