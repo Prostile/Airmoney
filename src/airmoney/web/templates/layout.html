@@ -21,6 +21,23 @@
     </nav>
   </header>
 
+  <section class="scan-progress" data-scan-progress hidden>
+    <div class="scan-progress__top">
+      <div>
+        <strong data-scan-title>Сканирование</strong>
+        <span data-scan-message>Подготовка</span>
+      </div>
+      <span class="scan-progress__percent" data-scan-percent>0%</span>
+    </div>
+    <div class="scan-progress__bar" aria-hidden="true">
+      <span data-scan-bar></span>
+    </div>
+    <div class="scan-progress__meta">
+      <span data-scan-count>0 / 0</span>
+      <span data-scan-counters>Лотов 0, кандидатов 0</span>
+    </div>
+  </section>
+
   <main>
     {% if message %}
       <div class="notice">{{ message }}</div>

@@ -41,7 +41,7 @@
             <button class="secondary" type="submit">{{ 'да' if row.enabled else 'нет' }}</button>
           </form>
         </td>
-        <td>
+        <td class="actions">
           <form method="post" action="/collections/{{ row.id }}/scan">
             <button class="secondary" type="submit">Скан</button>
           </form>

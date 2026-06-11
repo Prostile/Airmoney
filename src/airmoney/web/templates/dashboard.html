@@ -1,5 +1,20 @@
 {% extends "layout.html" %}
 {% block content %}
+{% if scan_summary.scan_targets == 0 %}
+<div class="notice warning">
+  <strong>Скану нечего обрабатывать.</strong>
+  {% if scan_summary.enabled_collections == 0 %}
+    Все коллекции выключены. Включи нужные коллекции на странице <a href="/collections">Коллекции</a>.
+  {% elif scan_summary.enabled_items == 0 %}
+    Все предметы выключены. Включи нужные предметы на странице <a href="/items">Предметы</a>.
+  {% elif scan_summary.items_blocked_by_disabled_collection > 0 %}
+    Есть включённые предметы, но их коллекции выключены. Включи коллекции на странице <a href="/collections">Коллекции</a>.
+  {% else %}
+    Проверь фильтры, коллекции и предметы.
+  {% endif %}
+</div>
+{% endif %}
+
 <section class="page-head">
   <div>
     <h1>Рабочая сводка</h1>
@@ -25,6 +40,7 @@
   <div class="metric good"><span>Good</span><strong>{{ stats.good_total }}</strong></div>
   <div class="metric watch"><span>Watch</span><strong>{{ stats.watch_total }}</strong></div>
   <div class="metric"><span>Активных предметов</span><strong>{{ stats.active_items }}</strong></div>
+  <div class="metric"><span>Целей скана</span><strong>{{ scan_summary.scan_targets }}</strong></div>
 </section>
 
 <section class="grid two">
@@ -39,6 +55,9 @@
       <tr><th>Последняя ошибка</th><td>{{ monitor.last_error or '-' }}</td></tr>
       <tr><th>Интервал</th><td>{{ settings.check_interval_seconds }} сек.</td></tr>
       <tr><th>Коллекций включено</th><td>{{ stats.active_collections }}</td></tr>
+      <tr><th>Предметов включено</th><td>{{ scan_summary.enabled_items }}</td></tr>
+      <tr><th>Целей в очереди</th><td>{{ scan_summary.scan_targets }}</td></tr>
+      <tr><th>Предметов в выключенных коллекциях</th><td>{{ scan_summary.items_blocked_by_disabled_collection }}</td></tr>
       <tr><th>Max scrolls</th><td>{{ settings.max_scrolls }}</td></tr>
     </table>
   </div>

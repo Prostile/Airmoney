@@ -107,7 +107,7 @@
             <input form="{{ form_id }}" name="pattern_ranges" value="{{ item.pattern_ranges or '' }}" placeholder="Pattern 1-5; 10">
           </td>
           <td><label class="check"><input form="{{ form_id }}" type="checkbox" name="telegram_alert_enabled" {% if item.telegram_alert_enabled is none or item.telegram_alert_enabled %}checked{% endif %}> алерт</label></td>
-          <td>
+          <td class="actions">
             <form id="{{ form_id }}" method="post" action="/items/{{ item.id }}/rule">
               <button type="submit">Сохранить</button>
             </form>

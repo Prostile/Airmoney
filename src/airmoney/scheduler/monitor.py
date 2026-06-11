@@ -29,16 +29,26 @@ def run_scan_cycle(
         raise RuntimeError("Другой скан уже выполняется.")
     run_id = repository.start_scan_run(trigger, collection_id=collection_id, item_id=item_id)
     try:
-        result = scan_once(repository, collection_id=collection_id, item_id=item_id)
+        def progress(**payload) -> None:
+            repository.update_scan_run_progress(run_id, **payload)
+
+        result = scan_once(
+            repository,
+            collection_id=collection_id,
+            item_id=item_id,
+            progress=progress,
+        )
         settings = repository.get_settings()
-        alerts_sent = TelegramNotifier(repository).send_pending_alerts(settings)
+        skipped = bool(result.message and result.scanned_items == 0)
+        alerts_sent = 0 if skipped else TelegramNotifier(repository).send_pending_alerts(settings)
         repository.finish_scan_run(
             run_id,
-            "success",
+            "skipped" if skipped else "success",
             scanned_items=result.scanned_items,
             listings_saved=result.listings_saved,
             candidates_saved=result.candidates_saved,
             alerts_sent=alerts_sent,
+            error=result.message,
         )
         return result
     except Exception as error:

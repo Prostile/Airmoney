@@ -30,3 +30,4 @@ def test_api_status_requires_basic_auth(tmp_path, monkeypatch):
         assert response.status_code == 200
         assert response.json()["parser_enabled"] is False
         assert "stats" in response.json()
+        assert "scan_summary" in response.json()

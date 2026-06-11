@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any, Callable
 
 from airmoney.config.models import Candidate
 from airmoney.currency.steam_currency import CurrencyService
@@ -24,10 +25,15 @@ from airmoney.steam.parser import (
 
 @dataclass
 class ScanResult:
+    total_items: int = 0
     scanned_items: int = 0
     listings_saved: int = 0
     candidates_saved: int = 0
     alert_candidates: list[Candidate] | None = None
+    message: str = ""
+
+
+ProgressCallback = Callable[..., None]
 
 
 def target_from_row(row: dict) -> ItemScanTarget:
@@ -47,15 +53,29 @@ def scan_once(
     repo: Repository | None = None,
     collection_id: str | None = None,
     item_id: str | None = None,
+    progress: ProgressCallback | None = None,
 ) -> ScanResult:
     repository = repo or Repository()
     settings = repository.get_settings()
     targets = repository.build_scan_targets(collection_id=collection_id, item_id=item_id)
     result = ScanResult(alert_candidates=[])
+    result.total_items = len(targets)
+    _emit_progress(
+        progress,
+        total_items=result.total_items,
+        current_item_index=0,
+        current_item_name="",
+        progress_message="Формируем список целей скана",
+    )
     if not targets:
+        result.message = _empty_targets_message(
+            repository.scan_target_summary(collection_id=collection_id, item_id=item_id)
+        )
+        _emit_progress(progress, progress_message=result.message)
         return result
     repository.mark_listings_inactive_for_items([row["id"] for row in targets])
 
+    _emit_progress(progress, progress_message="Обновляем курсы валют")
     rates = CurrencyService(settings).get_rates()
     repository.save_currency_rate(
         rates.usd_to_rub,
@@ -77,8 +97,17 @@ def scan_once(
         page = context.new_page()
 
         try:
-            for row in targets:
+            for index, row in enumerate(targets, start=1):
                 target = target_from_row(row)
+                _emit_progress(
+                    progress,
+                    current_item_index=index,
+                    current_item_name=target.display_name,
+                    progress_message=f"Открываем Steam Market: {target.display_name}",
+                    scanned_items=result.scanned_items,
+                    listings_saved=result.listings_saved,
+                    candidates_saved=result.candidates_saved,
+                )
                 response = page.goto(target.steam_market_url, wait_until="domcontentloaded", timeout=30000)
                 check_steam_access(page, response=response)
                 close_cookie_banner(page)
@@ -90,6 +119,18 @@ def scan_once(
                 previous_seen_count = -1
 
                 for scroll_index in range(settings.max_scrolls + 1):
+                    _emit_progress(
+                        progress,
+                        current_item_index=index,
+                        current_item_name=target.display_name,
+                        progress_message=(
+                            f"Читаем карточки: {target.display_name} "
+                            f"({scroll_index + 1}/{settings.max_scrolls + 1})"
+                        ),
+                        scanned_items=result.scanned_items,
+                        listings_saved=result.listings_saved,
+                        candidates_saved=result.candidates_saved,
+                    )
                     check_steam_access(page)
                     cards = extract_visible_cards_raw(page)
                     for card in cards:
@@ -124,6 +165,15 @@ def scan_once(
                         page.wait_for_timeout(250)
 
                 result.scanned_items += 1
+                _emit_progress(
+                    progress,
+                    current_item_index=index,
+                    current_item_name=target.display_name,
+                    progress_message=f"Готово: {target.display_name}",
+                    scanned_items=result.scanned_items,
+                    listings_saved=result.listings_saved,
+                    candidates_saved=result.candidates_saved,
+                )
                 if settings.request_delay_seconds > 0:
                     time.sleep(settings.request_delay_seconds)
 
@@ -135,3 +185,21 @@ def scan_once(
 
     repository.expire_candidates_for_inactive_listings()
     return result
+
+
+def _emit_progress(progress: ProgressCallback | None, **payload: Any) -> None:
+    if progress is None:
+        return
+    progress(**payload)
+
+
+def _empty_targets_message(summary: dict[str, int]) -> str:
+    if summary["total_items"] == 0:
+        return "Нет целей сканирования: добавьте предметы или импортируйте каталог."
+    if summary["enabled_collections"] == 0:
+        return "Нет целей сканирования: все коллекции выключены. Включите хотя бы одну коллекцию."
+    if summary["enabled_items"] == 0:
+        return "Нет целей сканирования: все предметы выключены. Включите хотя бы один предмет."
+    if summary["items_blocked_by_disabled_collection"] > 0:
+        return "Нет целей сканирования: предметы включены, но их коллекции выключены."
+    return "Нет целей сканирования: проверьте включённые коллекции, предметы и фильтры."
