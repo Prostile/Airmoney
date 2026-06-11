@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,7 +37,7 @@ def extract_visible_cards_raw(page) -> list[dict[str, str]]:
                     .replace(/\\n\\s+/g, "\\n")
                     .trim();
             };
-            const hasPrice = (text) => /(₽|руб|\\$|USD|€|EUR)/i.test(text);
+            const hasPrice = (text) => /(₽|руб|RUB|\\$|USD|€|EUR)/i.test(text);
             const hasItemHints = (text) => /(Купить|Buy|Шаблон|Степень износа|Pattern|Template|Paint Seed|Float|Wear)/i.test(text);
             const hasLikelyName = (text) => /\\|/.test(text);
             const getHref = (element) => {
@@ -98,7 +99,7 @@ def get_page_item_name(page) -> str:
                     const badMarkers = [
                         "торговая площадка", "community market", "steam", "купить", "buy",
                         "шаблон", "степень износа", "pattern", "template", "paint seed",
-                        "float", "wear", "руб", "₽", "$", "€", "usd", "eur",
+                        "float", "wear", "руб", "₽", "rub", "$", "€", "usd", "eur",
                         "заявок", "заказать", "сортировать", "отфильтровать"
                     ];
                     return badMarkers.some(marker => lowered.includes(marker));
@@ -161,7 +162,15 @@ def parse_card(
     wear = parse_wear(text)
     now = utc_now_iso()
     listing_url = href or target.steam_market_url
-    listing_id = listing_identity(target.id, name, listing_url, pattern, wear)
+    listing_id = listing_identity(
+        target.id,
+        name,
+        listing_url,
+        pattern,
+        wear,
+        price.buy_price_rub,
+        _stable_text_fingerprint(text),
+    )
 
     return MarketListing(
         id=listing_id,
@@ -186,3 +195,8 @@ def parse_card(
         is_active=True,
         parse_status="ok",
     )
+
+
+def _stable_text_fingerprint(text: str) -> str:
+    normalized = " ".join(str(text or "").split())
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:16]

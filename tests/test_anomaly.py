@@ -15,7 +15,7 @@ from airmoney.anomaly.history import build_market_snapshots, ewma
 from airmoney.anomaly.scoring import calculate_real_profit, estimate_fair_price, resolve_alert_level
 from airmoney.config.models import AnomalySettings, Collection, ItemDefinition, MarketListing, ParserSettings
 from airmoney.storage.repositories import Repository
-from airmoney.steam.scanner import _evaluate_item_listings
+from airmoney.steam.scanner import _evaluate_item_listings, _prepare_item_listings
 
 
 def listing(
@@ -252,6 +252,44 @@ def test_anomaly_disabled_uses_legacy_profit_logic():
     assert candidate.recommendation_level in {"good", "critical"}
 
 
+def test_analyzer_hard_skips_exact_mismatch_when_required():
+    settings = ParserSettings()
+    anomaly = settings.anomaly_settings
+    anomaly.sample.require_exact_item_match = True
+    anomaly.sample.min_listings = 1
+    settings.set_anomaly_settings(anomaly)
+    normal = listing(472, title="UMP-45 | Mechanism (Factory New)")
+
+    result = analyze_listing(
+        normal,
+        [normal],
+        {
+            "market_hash_name": "Souvenir UMP-45 | Mechanism (Factory New)",
+            "is_souvenir": True,
+            "is_stattrak": False,
+            "exterior": "Factory New",
+            "enabled": True,
+        },
+        {"enabled": True, "target_resale_price_rub": 1000},
+        settings,
+    )
+
+    assert result.alert_level == "skip"
+    assert "exact item mismatch" in result.reasons
+
+
+def test_prepare_item_listings_sorts_by_price_and_limits():
+    listings = [
+        MarketListing(id="listing_c", item_definition_id="ump", rule_id=None, skin_name="UMP", buy_price_rub=816),
+        MarketListing(id="listing_a", item_definition_id="ump", rule_id=None, skin_name="UMP", buy_price_rub=472),
+        MarketListing(id="listing_b", item_definition_id="ump", rule_id=None, skin_name="UMP", buy_price_rub=690),
+    ]
+
+    prepared = _prepare_item_listings(listings, target_listings=2)
+
+    assert [listing.buy_price_rub for listing in prepared] == [472, 690]
+
+
 def test_history_snapshots_update_repository_baseline(tmp_path):
     repo = Repository(tmp_path / "test.sqlite3")
     repo.save_collection(Collection(id="col", name="Collection"))
@@ -274,4 +312,13 @@ def test_history_snapshots_update_repository_baseline(tmp_path):
 
     assert "craft_low" in baselines
     assert baselines["craft_low"] == 797
+    assert repo.list_market_baselines("ump", min_snapshots=2) == {}
+
+    repo.save_market_snapshots(snapshots, alpha=0.25)
+    mature_baselines = repo.list_market_baselines("ump", min_snapshots=2)
+    baseline_rows = repo.list_market_baseline_rows("ump")
+
+    assert mature_baselines["craft_low"] == 797
+    assert baseline_rows[0]["snapshot_count"] == 2
+    assert baseline_rows[0]["sample_count"] == 6
     assert ewma(100, 200, 0.25) == 125

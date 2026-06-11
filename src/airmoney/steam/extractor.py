@@ -9,7 +9,7 @@ from airmoney.currency.provider import CurrencyRates
 
 
 PRICE_RUB_RE = re.compile(
-    r"([0-9][0-9 \u00a0]*(?:[,.][0-9]+)?)\s*(?:₽|руб)",
+    r"(?:\bRUB\s*([0-9][0-9,.\u00a0 ]*)|([0-9][0-9,.\u00a0 ]*)\s*(?:₽|руб\.?|RUB\b))",
     re.IGNORECASE,
 )
 PRICE_USD_RE = re.compile(
@@ -29,6 +29,21 @@ WEAR_RE = re.compile(
     r"(?:Степень\s+износа|Float\s+Value|Wear\s+Rating|Float)\s*[:#]?\s*([0-9]+(?:[,.][0-9]+)?)",
     re.IGNORECASE,
 )
+EXTERIOR_LINE_RE = re.compile(
+    r"^\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$",
+    re.IGNORECASE,
+)
+EXTERIOR_IN_NAME_RE = re.compile(
+    r"\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)",
+    re.IGNORECASE,
+)
+EXTERIOR_CANONICAL = {
+    "factory new": "Factory New",
+    "minimal wear": "Minimal Wear",
+    "field-tested": "Field-Tested",
+    "well-worn": "Well-Worn",
+    "battle-scarred": "Battle-Scarred",
+}
 
 
 @dataclass
@@ -83,11 +98,14 @@ def parse_price_values(text: str, rates: CurrencyRates) -> ParsedPrice | None:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
     for line in reversed(lines):
-        if not any(marker in line for marker in ["₽", "руб", "$", "USD", "€", "EUR"]):
+        upper_line = line.upper()
+        if not any(marker in line for marker in ["₽", "руб", "$", "€"]) and not any(
+            marker in upper_line for marker in ["RUB", "USD", "EUR"]
+        ):
             continue
         rub_match = PRICE_RUB_RE.search(line)
         if rub_match:
-            price = parse_money_number(rub_match.group(1))
+            price = parse_money_number(rub_match.group(1) or rub_match.group(2))
             return ParsedPrice(
                 buy_price_rub=round(price, 2),
                 buy_price_original=round(price, 2),
@@ -175,13 +193,26 @@ def value_in_ranges(value: int | None, ranges_text: str) -> bool:
 
 def parse_name_from_card_text(text: str) -> str:
     lines = [line.strip() for line in text.replace("\xa0", " ").splitlines() if line.strip()]
-    for line in lines:
+    for index, line in enumerate(lines):
         if "|" in line and not is_bad_name_line(line):
-            return line
+            return _append_following_exterior(line, lines[index + 1 :])
     for line in lines:
         if not is_bad_name_line(line):
             return line
     return ""
+
+
+def _append_following_exterior(name: str, following_lines: list[str]) -> str:
+    if EXTERIOR_IN_NAME_RE.search(name):
+        return name
+    for line in following_lines[:4]:
+        if is_bad_name_line(line):
+            continue
+        match = EXTERIOR_LINE_RE.match(line)
+        if match:
+            exterior = EXTERIOR_CANONICAL.get(match.group(1).lower(), match.group(1))
+            return f"{name} ({exterior})"
+    return name
 
 
 def is_bad_name_line(line: str) -> bool:
@@ -202,6 +233,7 @@ def is_bad_name_line(line: str) -> bool:
         "buy",
         "₽",
         "руб",
+        "rub",
         "$",
         "usd",
         "€",

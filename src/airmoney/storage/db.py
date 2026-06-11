@@ -22,6 +22,7 @@ def initialize_database(db_path: str | Path | None = None) -> None:
         apply_schema(connection)
         apply_lightweight_migrations(connection)
         ensure_default_settings(connection)
+        connection.commit()
     finally:
         connection.close()
 
@@ -244,6 +245,7 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             rolling_q25_rub REAL,
             rolling_floor_rub REAL,
             sample_count INTEGER NOT NULL DEFAULT 0,
+            snapshot_count INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL,
             UNIQUE(item_id, float_bucket),
             FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
@@ -316,6 +318,18 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
             ON candidates(anomaly_score, float_bucket, estimated_profit_rub)
         """
     )
+    baseline_columns = _table_columns(connection, "market_baseline")
+    if "snapshot_count" not in baseline_columns:
+        connection.execute(
+            "ALTER TABLE market_baseline ADD COLUMN snapshot_count INTEGER NOT NULL DEFAULT 0"
+        )
+        connection.execute(
+            """
+            UPDATE market_baseline
+            SET snapshot_count = CASE WHEN sample_count > 0 THEN 1 ELSE 0 END
+            WHERE snapshot_count = 0
+            """
+        )
 
 
 def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:

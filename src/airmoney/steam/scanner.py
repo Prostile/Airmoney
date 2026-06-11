@@ -166,15 +166,22 @@ def scan_once(
                     if len(seen_cards) == previous_seen_count:
                         break
                     previous_seen_count = len(seen_cards)
-                    if len(item_listings) >= anomaly_settings.sample.target_listings:
+                    if len(item_listings) >= anomaly_settings.sample.max_listings:
                         break
                     if scroll_index < settings.max_scrolls:
                         page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.85));")
                         page.wait_for_timeout(250)
 
+                item_listings = _prepare_item_listings(
+                    item_listings,
+                    anomaly_settings.sample.target_listings,
+                )
                 rule = repository.get_rule_for_item(target.id)
                 historical_baselines = (
-                    repository.list_market_baselines(target.id)
+                    repository.list_market_baselines(
+                        target.id,
+                        min_snapshots=settings.anomaly_settings.history.min_snapshots,
+                    )
                     if settings.anomaly_settings.history.enabled
                     else {}
                 )
@@ -277,6 +284,19 @@ def _evaluate_item_listings(
             )
         )
     return pairs
+
+
+def _prepare_item_listings(
+    listings: list[MarketListing],
+    target_listings: int,
+) -> list[MarketListing]:
+    return sorted(
+        listings,
+        key=lambda listing: (
+            listing.buy_price_rub if listing.buy_price_rub is not None else float("inf"),
+            listing.id,
+        ),
+    )[:target_listings]
 
 
 def _emit_progress(progress: ProgressCallback | None, **payload: Any) -> None:

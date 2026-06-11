@@ -825,7 +825,8 @@ class Repository:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_market_baselines(self, item_id: str) -> dict[str, float]:
+    def list_market_baselines(self, item_id: str, min_snapshots: int = 1) -> dict[str, float]:
+        min_snapshots = max(1, int(min_snapshots or 1))
         with self.connection() as connection:
             rows = connection.execute(
                 """
@@ -833,8 +834,9 @@ class Repository:
                 FROM market_baseline
                 WHERE item_id = ?
                   AND rolling_median_rub IS NOT NULL
+                  AND snapshot_count >= ?
                 """,
-                (item_id,),
+                (item_id, min_snapshots),
             ).fetchall()
         return {str(row["float_bucket"]): float(row["rolling_median_rub"]) for row in rows}
 
@@ -912,6 +914,7 @@ class Repository:
                             rolling_q25_rub = ?,
                             rolling_floor_rub = ?,
                             sample_count = sample_count + ?,
+                            snapshot_count = snapshot_count + 1,
                             updated_at = ?
                         WHERE item_id = ? AND float_bucket = ?
                         """,
@@ -930,9 +933,9 @@ class Repository:
                     """
                     INSERT INTO market_baseline (
                         item_id, float_bucket, rolling_median_rub,
-                        rolling_q25_rub, rolling_floor_rub, sample_count, updated_at
+                        rolling_q25_rub, rolling_floor_rub, sample_count, snapshot_count, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         snapshot.item_id,
@@ -941,6 +944,7 @@ class Repository:
                         snapshot.q25_price_rub,
                         snapshot.floor_price_rub,
                         snapshot.sample_size,
+                        1,
                         now,
                     ),
                 )

@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
-from airmoney.config.models import ParserSettings
+from airmoney.config.models import ParserSettings, parse_dt, utc_now
 from airmoney.recommendation.scoring import should_alert
 from airmoney.storage.repositories import Repository
 from airmoney.telegram.templates import batch_alert, candidate_alert, should_send_immediate
@@ -95,7 +96,11 @@ class TelegramNotifier:
             self.repo.log_telegram_alert(candidate["id"], "sent" if ok else "error", error)
             if ok:
                 sent += 1
-        if batch_candidates:
+        if batch_candidates and _batch_ready(
+            batch_candidates,
+            interval_seconds=alert_settings.batch_interval_seconds,
+            max_alerts_per_message=alert_settings.max_alerts_per_message,
+        ):
             limited = batch_candidates[: alert_settings.max_alerts_per_message]
             ok, error = send_telegram_message(
                 batch_alert(limited, f"{self.site_url}/candidates")[: alert_settings.max_message_length]
@@ -105,3 +110,33 @@ class TelegramNotifier:
             if ok:
                 sent += len(limited)
         return sent
+
+
+def _batch_ready(
+    candidates: list[dict],
+    interval_seconds: int,
+    max_alerts_per_message: int,
+) -> bool:
+    if len(candidates) >= max_alerts_per_message:
+        return True
+    created_at_values = [
+        created_at
+        for candidate in candidates
+        if (created_at := _candidate_created_at(candidate)) is not None
+    ]
+    if not created_at_values:
+        return True
+    oldest_created_at = min(created_at_values)
+    return (utc_now() - oldest_created_at).total_seconds() >= interval_seconds
+
+
+def _candidate_created_at(candidate: dict) -> datetime | None:
+    try:
+        value = parse_dt(candidate.get("created_at"))
+    except Exception:
+        return None
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value

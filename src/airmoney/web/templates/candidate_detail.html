@@ -103,7 +103,7 @@
       <div class="card-header"><h2 class="card-title"><i class="ti ti-database me-2"></i>Historical baselines</h2></div>
       <div class="table-responsive">
         <table class="table table-sm card-table">
-          <thead><tr><th>Bucket</th><th>Median</th><th>Q25</th><th>Floor</th><th>Samples</th><th>Updated</th></tr></thead>
+          <thead><tr><th>Bucket</th><th>Median</th><th>Q25</th><th>Floor</th><th>Listing samples</th><th>Snapshots</th><th>Updated</th></tr></thead>
           <tbody>
             {% for baseline in market_baselines %}
             <tr>
@@ -112,10 +112,11 @@
               <td>{{ "%.2f"|format(baseline.rolling_q25_rub) if baseline.rolling_q25_rub is not none else "-" }}</td>
               <td>{{ "%.2f"|format(baseline.rolling_floor_rub) if baseline.rolling_floor_rub is not none else "-" }}</td>
               <td>{{ baseline.sample_count }}</td>
+              <td>{{ baseline.snapshot_count }}</td>
               <td class="text-secondary">{{ baseline.updated_at }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="6" class="text-secondary">No historical baselines yet.</td></tr>
+            <tr><td colspan="7" class="text-secondary">No historical baselines yet.</td></tr>
             {% endfor %}
           </tbody>
         </table>

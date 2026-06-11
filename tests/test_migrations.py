@@ -55,6 +55,22 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
             is_active INTEGER NOT NULL DEFAULT 1,
             parse_status TEXT NOT NULL DEFAULT 'ok'
         );
+        CREATE TABLE market_baseline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id TEXT NOT NULL,
+            float_bucket TEXT NOT NULL,
+            rolling_median_rub REAL,
+            rolling_q25_rub REAL,
+            rolling_floor_rub REAL,
+            sample_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            UNIQUE(item_id, float_bucket)
+        );
+        INSERT INTO market_baseline (
+            item_id, float_bucket, rolling_median_rub,
+            rolling_q25_rub, rolling_floor_rub, sample_count, updated_at
+        )
+        VALUES ('ump', 'craft_low', 797, 690, 472, 3, '2026-06-11T00:00:00+00:00');
         """
     )
     connection.close()
@@ -65,7 +81,11 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
     settings_columns = {row[1] for row in connection.execute("PRAGMA table_info(settings)")}
     listing_columns = {row[1] for row in connection.execute("PRAGMA table_info(market_listings)")}
     scan_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_runs)")}
+    baseline_columns = {row[1] for row in connection.execute("PRAGMA table_info(market_baseline)")}
+    baseline_row = connection.execute("SELECT snapshot_count FROM market_baseline").fetchone()
     connection.close()
     assert "selected_exteriors" in settings_columns
     assert "currency_fetched_at" in listing_columns
     assert {"total_items", "current_item_index", "current_item_name", "progress_message", "updated_at"} <= scan_run_columns
+    assert "snapshot_count" in baseline_columns
+    assert baseline_row[0] == 1

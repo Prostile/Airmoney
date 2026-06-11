@@ -62,6 +62,8 @@ def analyze_listing(
         candidate,
         str(item.get("market_hash_name") or candidate.expected_market_hash_name),
     )
+    if anomaly_settings.sample.require_exact_item_match and not exact_item_match:
+        hard_skip_reasons.append("exact item mismatch")
 
     sample_min = _baseline_min_samples(anomaly_settings)
     local = calculate_local_baseline(
