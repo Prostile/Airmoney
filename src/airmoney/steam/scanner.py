@@ -298,7 +298,7 @@ def scan_once(
         total_items=result.total_items,
         current_item_index=0,
         current_item_name="",
-        progress_message="Р¤РѕСЂРјРёСЂСѓРµРј СЃРїРёСЃРѕРє С†РµР»РµР№ СЃРєР°РЅР°",
+        progress_message="Формируем список целей скана",
     )
     if not targets:
         result.message = _empty_targets_message(
@@ -307,7 +307,7 @@ def scan_once(
         _emit_progress(progress, progress_message=result.message)
         return result
 
-    _emit_progress(progress, progress_message="РћР±РЅРѕРІР»СЏРµРј РєСѓСЂС‹ РІР°Р»СЋС‚")
+    _emit_progress(progress, progress_message="Обновляем курсы валют")
     rates = CurrencyService(settings).get_rates()
     repository.save_currency_rate(
         rates.usd_to_rub,
@@ -320,7 +320,7 @@ def scan_once(
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as error:
-        raise RuntimeError("Р”Р»СЏ СЃРєР°РЅРёСЂРѕРІР°РЅРёСЏ РЅСѓР¶РµРЅ playwright. РЈСЃС‚Р°РЅРѕРІРё Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РёР· requirements.txt.") from error
+        raise RuntimeError("Для сканирования нужен playwright. Установи зависимости из requirements.txt.") from error
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -337,7 +337,7 @@ def scan_once(
                     progress,
                     current_item_index=index,
                     current_item_name=target.display_name,
-                    progress_message=f"РћС‚РєСЂС‹РІР°РµРј Steam Market: {target.display_name}",
+                    progress_message=f"Открываем Steam Market: {target.display_name}",
                     scanned_items=result.scanned_items,
                     listings_saved=result.listings_saved,
                     candidates_saved=result.candidates_saved,
@@ -369,7 +369,7 @@ def scan_once(
                     progress,
                     current_item_index=index,
                     current_item_name=target.display_name,
-                    progress_message=f"Р“РѕС‚РѕРІРѕ: {target.display_name}",
+                    progress_message=f"Готово: {target.display_name}",
                     scanned_items=result.scanned_items,
                     listings_saved=result.listings_saved,
                     candidates_saved=result.candidates_saved,
@@ -505,7 +505,7 @@ def _scan_item_once(
             current_item_index=index,
             current_item_name=target.display_name,
             progress_message=(
-                f"Р§РёС‚Р°РµРј РєР°СЂС‚РѕС‡РєРё: {target.display_name} "
+                f"Читаем карточки: {target.display_name} "
                 f"({scroll_index + 1}/{settings.max_scrolls + 1})"
             ),
             scanned_items=result.scanned_items,

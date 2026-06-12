@@ -97,9 +97,9 @@ JS_EXTRACT_MARKET_CARDS = """
             .replace(/\\n\\s+/g, "\\n")
             .trim();
     };
-    const hasPrice = (text) => /(в‚Ѕ|СЂСѓР±|RUB|\\$|USD|в‚¬|EUR)/i.test(text);
-    const hasFloatHints = (text) => /(РЁР°Р±Р»РѕРЅ|РЎС‚РµРїРµРЅСЊ РёР·РЅРѕСЃР°|Pattern|Template|Paint Seed|Float|Wear|Rating)/i.test(text);
-    const hasItemHints = (text) => /(РљСѓРїРёС‚СЊ|Buy|Sell|Market|РЁР°Р±Р»РѕРЅ|РЎС‚РµРїРµРЅСЊ РёР·РЅРѕСЃР°|Pattern|Template|Paint Seed|Float|Wear|Rating)/i.test(text);
+    const hasPrice = (text) => /(₽|руб|RUB|\\$|USD|€|EUR)/i.test(text);
+    const hasFloatHints = (text) => /(Шаблон|Степень износа|Pattern|Template|Paint Seed|Float|Wear|Rating)/i.test(text);
+    const hasItemHints = (text) => /(Купить|Buy|Sell|Market|Шаблон|Степень износа|Pattern|Template|Paint Seed|Float|Wear|Rating)/i.test(text);
     const hasLikelyName = (text) => /\\|/.test(text);
     const getHref = (element) => {
         const link = element.querySelector("a[href]");

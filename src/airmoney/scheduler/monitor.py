@@ -70,8 +70,8 @@ def run_scan_cycle(
     repository = repo or Repository()
     if not _SCAN_LOCK.acquire(blocking=False):
         run_id = repository.start_scan_run(trigger, collection_id=collection_id, item_id=item_id)
-        repository.finish_scan_run(run_id, "skipped", error="Р”СЂСѓРіРѕР№ СЃРєР°РЅ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ.")
-        raise RuntimeError("Р”СЂСѓРіРѕР№ СЃРєР°РЅ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ.")
+        repository.finish_scan_run(run_id, "skipped", error="Другой скан уже выполняется.")
+        raise RuntimeError("Другой скан уже выполняется.")
     run_id = repository.start_scan_run(trigger, collection_id=collection_id, item_id=item_id)
     try:
         settings = repository.get_settings()
