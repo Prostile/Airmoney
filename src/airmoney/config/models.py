@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 import json
@@ -118,9 +118,9 @@ class FloatBucketConfig:
 
 @dataclass
 class AnomalySampleSettings:
-    min_listings: int = 8
-    target_listings: int = 30
-    max_listings: int = 60
+    min_listings: int = 5
+    target_listings: int = 12
+    max_listings: int = 20
     exclude_candidate_from_baseline: bool = True
     require_exact_item_match: bool = True
     sort_by: str = "price_asc"
@@ -210,9 +210,9 @@ class AnomalySettings:
         return cls(
             enabled=to_bool(raw.get("enabled", True)),
             sample=AnomalySampleSettings(
-                min_listings=max(1, _safe_int(sample.get("min_listings"), 8)),
-                target_listings=max(1, _safe_int(sample.get("target_listings"), 30)),
-                max_listings=max(1, _safe_int(sample.get("max_listings"), 60)),
+                min_listings=max(1, _safe_int(sample.get("min_listings"), 5)),
+                target_listings=max(1, _safe_int(sample.get("target_listings"), 12)),
+                max_listings=max(1, _safe_int(sample.get("max_listings"), 20)),
                 exclude_candidate_from_baseline=to_bool(sample.get("exclude_candidate_from_baseline", True)),
                 require_exact_item_match=to_bool(sample.get("require_exact_item_match", True)),
                 sort_by=str(sample.get("sort_by") or "price_asc"),
@@ -344,6 +344,132 @@ class TelegramAlertSettings:
 
 
 @dataclass
+class ScanQueueSettings:
+    enabled: bool = True
+    max_items_per_cycle: int = 5
+    item_cooldown_seconds: int = 1800
+    collection_cooldown_seconds: int = 3600
+    priority_first: bool = True
+    rotate_by_last_parsed_at: bool = True
+    random_jitter: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ScanQueueSettings":
+        raw = data or {}
+        return cls(
+            enabled=to_bool(raw.get("enabled", True)),
+            max_items_per_cycle=max(1, _safe_int(raw.get("max_items_per_cycle"), 5)),
+            item_cooldown_seconds=max(0, _safe_int(raw.get("item_cooldown_seconds"), 1800)),
+            collection_cooldown_seconds=max(0, _safe_int(raw.get("collection_cooldown_seconds"), 3600)),
+            priority_first=to_bool(raw.get("priority_first", True)),
+            rotate_by_last_parsed_at=to_bool(raw.get("rotate_by_last_parsed_at", True)),
+            random_jitter=to_bool(raw.get("random_jitter", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class BrowserOptimizationSettings:
+    block_heavy_resources: bool = True
+    blocked_resource_types: list[str] = field(default_factory=lambda: ["image", "media", "font"])
+    block_stylesheets: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "BrowserOptimizationSettings":
+        raw = data or {}
+        raw_types = raw.get("blocked_resource_types", ["image", "media", "font"])
+        if not isinstance(raw_types, list):
+            raw_types = ["image", "media", "font"]
+        allowed = {"image", "media", "font", "stylesheet"}
+        blocked = [str(value) for value in raw_types if str(value) in allowed]
+        if not blocked:
+            blocked = ["image", "media", "font"]
+        return cls(
+            block_heavy_resources=to_bool(raw.get("block_heavy_resources", True)),
+            blocked_resource_types=blocked,
+            block_stylesheets=to_bool(raw.get("block_stylesheets", False)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ScanOptimizationSettings:
+    two_stage_scan: bool = True
+    shallow_target_listings: int = 8
+    shallow_min_gap_percent: float = 10.0
+    deep_scan_on_gap: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ScanOptimizationSettings":
+        raw = data or {}
+        return cls(
+            two_stage_scan=to_bool(raw.get("two_stage_scan", True)),
+            shallow_target_listings=max(4, _safe_int(raw.get("shallow_target_listings"), 8)),
+            shallow_min_gap_percent=max(0.0, _safe_float(raw.get("shallow_min_gap_percent"), 10.0)),
+            deep_scan_on_gap=to_bool(raw.get("deep_scan_on_gap", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class HistoryOptimizationSettings:
+    use_mature_history_for_shallow_scan: bool = True
+    mature_history_min_snapshots: int = 5
+    mature_history_target_listings: int = 8
+    use_stale_baseline_on_scan_failure: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "HistoryOptimizationSettings":
+        raw = data or {}
+        return cls(
+            use_mature_history_for_shallow_scan=to_bool(raw.get("use_mature_history_for_shallow_scan", True)),
+            mature_history_min_snapshots=max(1, _safe_int(raw.get("mature_history_min_snapshots"), 5)),
+            mature_history_target_listings=max(3, _safe_int(raw.get("mature_history_target_listings"), 8)),
+            use_stale_baseline_on_scan_failure=to_bool(raw.get("use_stale_baseline_on_scan_failure", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class SteamGuardSettings:
+    enabled: bool = True
+    cooldown_on_limit_seconds: int = 7200
+    max_cooldown_seconds: int = 21600
+    backoff_multiplier: float = 2.0
+    jitter_percent: int = 20
+    retry_network_errors: bool = True
+    network_error_retry_delay_seconds: int = 30
+    max_network_retries: int = 1
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "SteamGuardSettings":
+        raw = data or {}
+        cooldown = max(1, _safe_int(raw.get("cooldown_on_limit_seconds"), 7200))
+        max_cooldown = max(cooldown, _safe_int(raw.get("max_cooldown_seconds"), 21600))
+        return cls(
+            enabled=to_bool(raw.get("enabled", True)),
+            cooldown_on_limit_seconds=cooldown,
+            max_cooldown_seconds=max_cooldown,
+            backoff_multiplier=max(1.0, _safe_float(raw.get("backoff_multiplier"), 2.0)),
+            jitter_percent=max(0, _safe_int(raw.get("jitter_percent"), 20)),
+            retry_network_errors=to_bool(raw.get("retry_network_errors", True)),
+            network_error_retry_delay_seconds=max(0, _safe_int(raw.get("network_error_retry_delay_seconds"), 30)),
+            max_network_retries=max(0, _safe_int(raw.get("max_network_retries"), 1)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class Collection:
     id: str
     name: str
@@ -373,11 +499,11 @@ class ItemDefinition:
 @dataclass
 class ParserSettings:
     enabled: bool = False
-    check_interval_seconds: int = 300
+    check_interval_seconds: int = 1200
     headless: bool = True
-    max_scrolls: int = 1
-    request_delay_seconds: float = 2.0
-    steam_block_pause_seconds: int = 1800
+    max_scrolls: int = 0
+    request_delay_seconds: float = 10.0
+    steam_block_pause_seconds: int = 7200
     currency_provider: str = "steam_currency"
     currency_cache_ttl_seconds: int = 21600
     fallback_usd_to_rub: float = 72.0
@@ -392,6 +518,11 @@ class ParserSettings:
     selected_exteriors: str = field(default_factory=lambda: json.dumps(EXTERIORS))
     anomaly_config: str = field(default_factory=lambda: json.dumps(AnomalySettings().to_dict(), ensure_ascii=False))
     telegram_config: str = field(default_factory=lambda: json.dumps(DEFAULT_TELEGRAM_ALERT_CONFIG, ensure_ascii=False))
+    scan_queue_config: str = field(default_factory=lambda: json.dumps(ScanQueueSettings().to_dict(), ensure_ascii=False))
+    browser_optimization_config: str = field(default_factory=lambda: json.dumps(BrowserOptimizationSettings().to_dict(), ensure_ascii=False))
+    scan_optimization_config: str = field(default_factory=lambda: json.dumps(ScanOptimizationSettings().to_dict(), ensure_ascii=False))
+    history_optimization_config: str = field(default_factory=lambda: json.dumps(HistoryOptimizationSettings().to_dict(), ensure_ascii=False))
+    steam_guard_config: str = field(default_factory=lambda: json.dumps(SteamGuardSettings().to_dict(), ensure_ascii=False))
     updated_at: str = field(default_factory=utc_now_iso)
 
     @property
@@ -429,6 +560,61 @@ class ParserSettings:
 
     def set_telegram_alert_settings(self, value: TelegramAlertSettings) -> None:
         self.telegram_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def scan_queue_settings(self) -> ScanQueueSettings:
+        try:
+            data = json.loads(self.scan_queue_config or "{}")
+        except Exception:
+            data = {}
+        return ScanQueueSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_scan_queue_settings(self, value: ScanQueueSettings) -> None:
+        self.scan_queue_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def browser_optimization_settings(self) -> BrowserOptimizationSettings:
+        try:
+            data = json.loads(self.browser_optimization_config or "{}")
+        except Exception:
+            data = {}
+        return BrowserOptimizationSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_browser_optimization_settings(self, value: BrowserOptimizationSettings) -> None:
+        self.browser_optimization_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def scan_optimization_settings(self) -> ScanOptimizationSettings:
+        try:
+            data = json.loads(self.scan_optimization_config or "{}")
+        except Exception:
+            data = {}
+        return ScanOptimizationSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_scan_optimization_settings(self, value: ScanOptimizationSettings) -> None:
+        self.scan_optimization_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def history_optimization_settings(self) -> HistoryOptimizationSettings:
+        try:
+            data = json.loads(self.history_optimization_config or "{}")
+        except Exception:
+            data = {}
+        return HistoryOptimizationSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_history_optimization_settings(self, value: HistoryOptimizationSettings) -> None:
+        self.history_optimization_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def steam_guard_settings(self) -> SteamGuardSettings:
+        try:
+            data = json.loads(self.steam_guard_config or "{}")
+        except Exception:
+            data = {}
+        return SteamGuardSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_steam_guard_settings(self, value: SteamGuardSettings) -> None:
+        self.steam_guard_config = json.dumps(value.to_dict(), ensure_ascii=False)
 
 
 @dataclass

@@ -81,11 +81,33 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
     settings_columns = {row[1] for row in connection.execute("PRAGMA table_info(settings)")}
     listing_columns = {row[1] for row in connection.execute("PRAGMA table_info(market_listings)")}
     scan_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_runs)")}
+    scan_item_result_columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_item_results)")}
     baseline_columns = {row[1] for row in connection.execute("PRAGMA table_info(market_baseline)")}
     baseline_row = connection.execute("SELECT snapshot_count FROM market_baseline").fetchone()
+    settings = connection.execute(
+        "SELECT check_interval_seconds, max_scrolls, request_delay_seconds, steam_block_pause_seconds, scan_queue_config FROM settings WHERE id = 1"
+    ).fetchone()
+    app_state_marker = connection.execute(
+        "SELECT value FROM app_state WHERE key = 'safe_settings_profile_applied'"
+    ).fetchone()
     connection.close()
     assert "selected_exteriors" in settings_columns
     assert "currency_fetched_at" in listing_columns
     assert {"total_items", "current_item_index", "current_item_name", "progress_message", "updated_at"} <= scan_run_columns
+    assert {
+        "scan_queue_config",
+        "browser_optimization_config",
+        "scan_optimization_config",
+        "history_optimization_config",
+        "steam_guard_config",
+    } <= settings_columns
+    assert {"selected_targets_count", "resource_blocked_count", "steam_cooldown_until"} <= scan_run_columns
+    assert {"scan_run_id", "item_id", "status", "exact_cards", "duration_ms"} <= scan_item_result_columns
     assert "snapshot_count" in baseline_columns
     assert baseline_row[0] == 1
+    assert settings[0] == 1200
+    assert settings[1] == 0
+    assert settings[2] == 10.0
+    assert settings[3] == 7200
+    assert "max_items_per_cycle" in settings[4]
+    assert app_state_marker[0] == "1"

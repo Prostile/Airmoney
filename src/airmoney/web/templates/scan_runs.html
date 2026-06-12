@@ -68,7 +68,19 @@
           <td>{{ run.listings_saved }}</td>
           <td>{{ run.candidates_saved }}</td>
           <td>{{ run.alerts_sent }}</td>
-          <td class="text-secondary">{{ run.error }}</td>
+          <td class="text-secondary">
+            {{ run.error }}
+            <div class="small text-secondary">
+              selected {{ run.selected_targets_count or 0 }},
+              queue {{ run.skipped_by_queue_count or 0 }},
+              item cd {{ run.skipped_by_item_cooldown_count or 0 }},
+              collection cd {{ run.skipped_by_collection_cooldown_count or 0 }},
+              early {{ run.early_stop_count or 0 }},
+              blocked {{ run.resource_blocked_count or 0 }},
+              shallow/deep {{ run.shallow_skipped_count or 0 }}/{{ run.deep_scan_count or 0 }}
+              {% if run.steam_cooldown_active %}, cooldown {{ run.steam_cooldown_until }}{% endif %}
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

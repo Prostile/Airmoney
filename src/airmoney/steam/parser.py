@@ -88,6 +88,92 @@ def extract_visible_cards_raw(page) -> list[dict[str, str]]:
     )
 
 
+JS_EXTRACT_MARKET_CARDS = """
+() => {
+    const normalize = (text) => {
+        return (text || "")
+            .replace(/\\u00a0/g, " ")
+            .replace(/[ \\t]+/g, " ")
+            .replace(/\\n\\s+/g, "\\n")
+            .trim();
+    };
+    const hasPrice = (text) => /(в‚Ѕ|СЂСѓР±|RUB|\\$|USD|в‚¬|EUR)/i.test(text);
+    const hasFloatHints = (text) => /(РЁР°Р±Р»РѕРЅ|РЎС‚РµРїРµРЅСЊ РёР·РЅРѕСЃР°|Pattern|Template|Paint Seed|Float|Wear|Rating)/i.test(text);
+    const hasItemHints = (text) => /(РљСѓРїРёС‚СЊ|Buy|Sell|Market|РЁР°Р±Р»РѕРЅ|РЎС‚РµРїРµРЅСЊ РёР·РЅРѕСЃР°|Pattern|Template|Paint Seed|Float|Wear|Rating)/i.test(text);
+    const hasLikelyName = (text) => /\\|/.test(text);
+    const getHref = (element) => {
+        const link = element.querySelector("a[href]");
+        if (link) return link.href;
+        if (element.tagName && element.tagName.toLowerCase() === "a") return element.href;
+        return "";
+    };
+    const getResourceId = (element) => {
+        let current = element;
+        for (let i = 0; i < 5; i++) {
+            if (!current) break;
+            if (current.dataset) {
+                for (const key of ["listingid", "listingId", "assetid", "assetId", "id"]) {
+                    if (current.dataset[key]) return current.dataset[key];
+                }
+            }
+            if (current.id) return current.id;
+            current = current.parentElement;
+        }
+        return "";
+    };
+    const isReasonableCard = (element, requireFloat) => {
+        const rect = element.getBoundingClientRect();
+        if (rect.width < 120 || rect.height < 80) return false;
+        if (rect.width > 700 || rect.height > 900) return false;
+        const text = normalize(element.innerText || element.textContent || "");
+        if (text.length < 20 || text.length > 2500) return false;
+        if (!hasPrice(text) || !hasLikelyName(text)) return false;
+        return requireFloat ? hasFloatHints(text) : hasItemHints(text);
+    };
+    const findBestCardAncestor = (element) => {
+        let best = element;
+        let current = element;
+        for (let i = 0; i < 6; i++) {
+            if (!current) break;
+            const rect = current.getBoundingClientRect();
+            const text = normalize(current.innerText || current.textContent || "");
+            const goodSize = rect.width >= 120 && rect.height >= 80 && rect.width <= 700 && rect.height <= 900;
+            const goodText = text.length >= 20 && text.length <= 2500 && hasPrice(text);
+            if (goodSize && goodText) {
+                best = current;
+                if (hasLikelyName(text)) return current;
+            }
+            current = current.parentElement;
+        }
+        return best;
+    };
+    const all = Array.from(document.querySelectorAll("div, article, li, a"));
+    const primaryCandidates = all.filter((element) => isReasonableCard(element, true));
+    const fallbackCandidates = all.filter((element) => isReasonableCard(element, false));
+    const result = [];
+    const seen = new Set();
+    for (const candidate of primaryCandidates.concat(fallbackCandidates)) {
+        const card = findBestCardAncestor(candidate);
+        const text = normalize(card.innerText || card.textContent || "");
+        if (!text || !hasPrice(text) || !hasLikelyName(text) || seen.has(text)) continue;
+        seen.add(text);
+        result.push({
+            text: text,
+            href: getHref(card),
+            html: card.innerHTML || "",
+            resource_id: getResourceId(card)
+        });
+        if (result.length >= 100) break;
+    }
+    return result;
+}
+"""
+
+
+def extract_visible_cards_raw(page) -> list[dict[str, str]]:
+    return page.evaluate(JS_EXTRACT_MARKET_CARDS)
+
+
 def get_page_item_name(page) -> str:
     try:
         name = page.evaluate(

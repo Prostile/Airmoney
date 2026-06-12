@@ -2,11 +2,11 @@ version: 1
 
 parser:
   enabled: false
-  check_interval_seconds: 300
+  check_interval_seconds: 1200
   headless: true
-  max_scrolls: 1
-  request_delay_seconds: 2
-  steam_block_pause_seconds: 1800
+  max_scrolls: 0
+  request_delay_seconds: 10.0
+  steam_block_pause_seconds: 7200
   selected_exteriors:
     - Factory New
     - Minimal Wear
@@ -29,9 +29,9 @@ profit:
 anomaly:
   enabled: true
   sample:
-    min_listings: 8
-    target_listings: 30
-    max_listings: 60
+    min_listings: 5
+    target_listings: 12
+    max_listings: 20
     exclude_candidate_from_baseline: true
     require_exact_item_match: true
   thresholds:
@@ -73,6 +73,45 @@ anomaly:
     storage: sqlite
     ewma_alpha: 0.25
     min_snapshots: 5
+
+scan_queue:
+  enabled: true
+  max_items_per_cycle: 5
+  item_cooldown_seconds: 1800
+  collection_cooldown_seconds: 3600
+  priority_first: true
+  rotate_by_last_parsed_at: true
+  random_jitter: true
+
+browser_optimization:
+  block_heavy_resources: true
+  blocked_resource_types:
+    - image
+    - media
+    - font
+  block_stylesheets: false
+
+scan_optimization:
+  two_stage_scan: true
+  shallow_target_listings: 8
+  shallow_min_gap_percent: 10.0
+  deep_scan_on_gap: true
+
+history_optimization:
+  use_mature_history_for_shallow_scan: true
+  mature_history_min_snapshots: 5
+  mature_history_target_listings: 8
+  use_stale_baseline_on_scan_failure: true
+
+steam_guard:
+  enabled: true
+  cooldown_on_limit_seconds: 7200
+  max_cooldown_seconds: 21600
+  backoff_multiplier: 2.0
+  jitter_percent: 20
+  retry_network_errors: true
+  network_error_retry_delay_seconds: 30
+  max_network_retries: 1
 
 telegram:
   enabled: false

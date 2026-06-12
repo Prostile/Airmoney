@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 
 class SteamAccessLimited(Exception):
     pass
@@ -41,6 +43,32 @@ def check_steam_access(page, response=None) -> None:
         raise
     except Exception:
         pass
+
+
+class ResourceBlocker:
+    def __init__(self, settings: Any):
+        self.settings = settings
+        self.blocked_count = 0
+        self.blocked_types = set(getattr(settings, "blocked_resource_types", ["image", "media", "font"]))
+        self.block_stylesheets = bool(getattr(settings, "block_stylesheets", False))
+
+    def __call__(self, route) -> None:
+        resource_type = route.request.resource_type
+        should_block = (resource_type != "stylesheet" and resource_type in self.blocked_types) or (
+            resource_type == "stylesheet" and self.block_stylesheets
+        )
+        if should_block:
+            self.blocked_count += 1
+            route.abort()
+            return
+        route.continue_()
+
+
+def install_resource_blocking(context, settings: Any) -> ResourceBlocker:
+    blocker = ResourceBlocker(settings)
+    if bool(getattr(settings, "block_heavy_resources", True)):
+        context.route("**/*", blocker)
+    return blocker
 
 
 def block_unneeded_requests(route) -> None:

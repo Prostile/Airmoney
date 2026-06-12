@@ -67,6 +67,64 @@
       </div>
     </div>
 
+    <div class="col-12">
+      <div class="card form-card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-list-check me-2"></i>Scan queue</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="scan_queue_enabled" {% if scan_queue.enabled %}checked{% endif %}><span class="form-check-label">Queue enabled</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max items per cycle</label><input class="form-control" type="number" name="scan_queue_max_items_per_cycle" value="{{ scan_queue.max_items_per_cycle }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Item cooldown, sec</label><input class="form-control" type="number" name="scan_queue_item_cooldown_seconds" value="{{ scan_queue.item_cooldown_seconds }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Collection cooldown, sec</label><input class="form-control" type="number" name="scan_queue_collection_cooldown_seconds" value="{{ scan_queue.collection_cooldown_seconds }}" min="0"></div>
+            <div class="col-12 col-md-4"><label class="form-check"><input class="form-check-input" type="checkbox" name="scan_queue_priority_first" {% if scan_queue.priority_first %}checked{% endif %}><span class="form-check-label">Priority first</span></label></div>
+            <div class="col-12 col-md-4"><label class="form-check"><input class="form-check-input" type="checkbox" name="scan_queue_rotate_by_last_parsed_at" {% if scan_queue.rotate_by_last_parsed_at %}checked{% endif %}><span class="form-check-label">Rotate by last parsed</span></label></div>
+            <div class="col-12 col-md-4"><label class="form-check"><input class="form-check-input" type="checkbox" name="scan_queue_random_jitter" {% if scan_queue.random_jitter %}checked{% endif %}><span class="form-check-label">Random jitter</span></label></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card form-card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-bolt me-2"></i>Safe scan optimizations</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="browser_block_heavy_resources" {% if browser_optimization.block_heavy_resources %}checked{% endif %}><span class="form-check-label">Block heavy resources</span></label></div>
+            <div class="col-12 col-md-2"><label class="form-check"><input class="form-check-input" type="checkbox" name="browser_block_images" {% if "image" in browser_optimization.blocked_resource_types %}checked{% endif %}><span class="form-check-label">Images</span></label></div>
+            <div class="col-12 col-md-2"><label class="form-check"><input class="form-check-input" type="checkbox" name="browser_block_media" {% if "media" in browser_optimization.blocked_resource_types %}checked{% endif %}><span class="form-check-label">Media</span></label></div>
+            <div class="col-12 col-md-2"><label class="form-check"><input class="form-check-input" type="checkbox" name="browser_block_fonts" {% if "font" in browser_optimization.blocked_resource_types %}checked{% endif %}><span class="form-check-label">Fonts</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-check"><input class="form-check-input" type="checkbox" name="browser_block_stylesheets" {% if browser_optimization.block_stylesheets %}checked{% endif %}><span class="form-check-label">Stylesheets</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-check form-switch mt-3"><input class="form-check-input" type="checkbox" name="scan_optimization_two_stage_scan" {% if scan_optimization.two_stage_scan %}checked{% endif %}><span class="form-check-label">Two-stage scan</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Shallow target listings</label><input class="form-control" type="number" name="scan_optimization_shallow_target_listings" value="{{ scan_optimization.shallow_target_listings }}" min="4"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Shallow min gap, %</label><input class="form-control" type="number" step="0.01" name="scan_optimization_shallow_min_gap_percent" value="{{ scan_optimization.shallow_min_gap_percent }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-check mt-4"><input class="form-check-input" type="checkbox" name="scan_optimization_deep_scan_on_gap" {% if scan_optimization.deep_scan_on_gap %}checked{% endif %}><span class="form-check-label">Deep scan on gap</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-check form-switch mt-3"><input class="form-check-input" type="checkbox" name="history_use_mature_history_for_shallow_scan" {% if history_optimization.use_mature_history_for_shallow_scan %}checked{% endif %}><span class="form-check-label">Use mature history</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Mature snapshots</label><input class="form-control" type="number" name="history_mature_history_min_snapshots" value="{{ history_optimization.mature_history_min_snapshots }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Mature target listings</label><input class="form-control" type="number" name="history_mature_history_target_listings" value="{{ history_optimization.mature_history_target_listings }}" min="3"></div>
+            <div class="col-12 col-md-3"><label class="form-check mt-4"><input class="form-check-input" type="checkbox" name="history_use_stale_baseline_on_scan_failure" {% if history_optimization.use_stale_baseline_on_scan_failure %}checked{% endif %}><span class="form-check-label">Use stale baseline</span></label></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card form-card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-shield-pause me-2"></i>Steam guard</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="steam_guard_enabled" {% if steam_guard.enabled %}checked{% endif %}><span class="form-check-label">Guard enabled</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Cooldown on limit, sec</label><input class="form-control" type="number" name="steam_guard_cooldown_on_limit_seconds" value="{{ steam_guard.cooldown_on_limit_seconds }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max cooldown, sec</label><input class="form-control" type="number" name="steam_guard_max_cooldown_seconds" value="{{ steam_guard.max_cooldown_seconds }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Backoff multiplier</label><input class="form-control" type="number" step="0.1" name="steam_guard_backoff_multiplier" value="{{ steam_guard.backoff_multiplier }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Jitter, %</label><input class="form-control" type="number" name="steam_guard_jitter_percent" value="{{ steam_guard.jitter_percent }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-check mt-4"><input class="form-check-input" type="checkbox" name="steam_guard_retry_network_errors" {% if steam_guard.retry_network_errors %}checked{% endif %}><span class="form-check-label">Retry network errors</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Network retry delay</label><input class="form-control" type="number" name="steam_guard_network_error_retry_delay_seconds" value="{{ steam_guard.network_error_retry_delay_seconds }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max network retries</label><input class="form-control" type="number" name="steam_guard_max_network_retries" value="{{ steam_guard.max_network_retries }}" min="0"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="col-12 col-lg-6">
       <div class="card form-card h-100">
         <div class="card-header"><h2 class="card-title"><i class="ti ti-currency-rubel me-2"></i>Валюта</h2></div>

@@ -176,6 +176,11 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 "active": "settings",
                 "settings": settings,
                 "anomaly": settings.anomaly_settings,
+                "scan_queue": settings.scan_queue_settings,
+                "browser_optimization": settings.browser_optimization_settings,
+                "scan_optimization": settings.scan_optimization_settings,
+                "history_optimization": settings.history_optimization_settings,
+                "steam_guard": settings.steam_guard_settings,
                 "telegram_alert": settings.telegram_alert_settings,
                 "exteriors": EXTERIORS,
                 "exterior_field": _exterior_field,
@@ -261,7 +266,97 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         anomaly.nearest_neighbors.max_float_distance = _float(
             form, "anomaly_neighbors_max_float_distance", anomaly.nearest_neighbors.max_float_distance
         )
+        anomaly_errors = _anomaly_sample_errors(anomaly)
+        if anomaly_errors:
+            message = "invalid_settings_" + "; ".join(anomaly_errors)
+            return RedirectResponse(f"/settings?message={urllib.parse.quote(message[:180])}", status_code=303)
         settings.set_anomaly_settings(anomaly)
+
+        scan_queue = current_settings.scan_queue_settings
+        scan_queue.enabled = _checkbox(form, "scan_queue_enabled")
+        scan_queue.max_items_per_cycle = _int(form, "scan_queue_max_items_per_cycle", scan_queue.max_items_per_cycle)
+        scan_queue.item_cooldown_seconds = _int(form, "scan_queue_item_cooldown_seconds", scan_queue.item_cooldown_seconds)
+        scan_queue.collection_cooldown_seconds = _int(
+            form,
+            "scan_queue_collection_cooldown_seconds",
+            scan_queue.collection_cooldown_seconds,
+        )
+        scan_queue.priority_first = _checkbox(form, "scan_queue_priority_first")
+        scan_queue.rotate_by_last_parsed_at = _checkbox(form, "scan_queue_rotate_by_last_parsed_at")
+        scan_queue.random_jitter = _checkbox(form, "scan_queue_random_jitter")
+        settings.set_scan_queue_settings(scan_queue)
+
+        browser_optimization = current_settings.browser_optimization_settings
+        browser_optimization.block_heavy_resources = _checkbox(form, "browser_block_heavy_resources")
+        blocked_types = []
+        if _checkbox(form, "browser_block_images"):
+            blocked_types.append("image")
+        if _checkbox(form, "browser_block_media"):
+            blocked_types.append("media")
+        if _checkbox(form, "browser_block_fonts"):
+            blocked_types.append("font")
+        browser_optimization.blocked_resource_types = blocked_types
+        browser_optimization.block_stylesheets = _checkbox(form, "browser_block_stylesheets")
+        settings.set_browser_optimization_settings(browser_optimization)
+
+        scan_optimization = current_settings.scan_optimization_settings
+        scan_optimization.two_stage_scan = _checkbox(form, "scan_optimization_two_stage_scan")
+        scan_optimization.shallow_target_listings = _int(
+            form,
+            "scan_optimization_shallow_target_listings",
+            scan_optimization.shallow_target_listings,
+        )
+        scan_optimization.shallow_min_gap_percent = _float(
+            form,
+            "scan_optimization_shallow_min_gap_percent",
+            scan_optimization.shallow_min_gap_percent,
+        )
+        scan_optimization.deep_scan_on_gap = _checkbox(form, "scan_optimization_deep_scan_on_gap")
+        settings.set_scan_optimization_settings(scan_optimization)
+
+        history_optimization = current_settings.history_optimization_settings
+        history_optimization.use_mature_history_for_shallow_scan = _checkbox(
+            form,
+            "history_use_mature_history_for_shallow_scan",
+        )
+        history_optimization.mature_history_min_snapshots = _int(
+            form,
+            "history_mature_history_min_snapshots",
+            history_optimization.mature_history_min_snapshots,
+        )
+        history_optimization.mature_history_target_listings = _int(
+            form,
+            "history_mature_history_target_listings",
+            history_optimization.mature_history_target_listings,
+        )
+        history_optimization.use_stale_baseline_on_scan_failure = _checkbox(
+            form,
+            "history_use_stale_baseline_on_scan_failure",
+        )
+        settings.set_history_optimization_settings(history_optimization)
+
+        steam_guard = current_settings.steam_guard_settings
+        steam_guard.enabled = _checkbox(form, "steam_guard_enabled")
+        steam_guard.cooldown_on_limit_seconds = _int(
+            form,
+            "steam_guard_cooldown_on_limit_seconds",
+            steam_guard.cooldown_on_limit_seconds,
+        )
+        steam_guard.max_cooldown_seconds = _int(
+            form,
+            "steam_guard_max_cooldown_seconds",
+            steam_guard.max_cooldown_seconds,
+        )
+        steam_guard.backoff_multiplier = _float(form, "steam_guard_backoff_multiplier", steam_guard.backoff_multiplier)
+        steam_guard.jitter_percent = _int(form, "steam_guard_jitter_percent", steam_guard.jitter_percent)
+        steam_guard.retry_network_errors = _checkbox(form, "steam_guard_retry_network_errors")
+        steam_guard.network_error_retry_delay_seconds = _int(
+            form,
+            "steam_guard_network_error_retry_delay_seconds",
+            steam_guard.network_error_retry_delay_seconds,
+        )
+        steam_guard.max_network_retries = _int(form, "steam_guard_max_network_retries", steam_guard.max_network_retries)
+        settings.set_steam_guard_settings(steam_guard)
 
         telegram_alert = current_settings.telegram_alert_settings
         telegram_alert.message_format = str(form.get("telegram_message_format", telegram_alert.message_format) or "compact")
@@ -770,6 +865,19 @@ def _float(form: Any, name: str, default: float) -> float:
         return float(str(form.get(name, default)).replace(",", "."))
     except Exception:
         return default
+
+
+def _anomaly_sample_errors(anomaly: Any) -> list[str]:
+    errors: list[str] = []
+    if anomaly.sample.min_listings < 3:
+        errors.append("anomaly.sample.min_listings must be >= 3")
+    if anomaly.sample.target_listings < anomaly.sample.min_listings:
+        errors.append("anomaly.sample.target_listings must be >= min_listings")
+    if anomaly.sample.max_listings < anomaly.sample.target_listings:
+        errors.append("anomaly.sample.max_listings must be >= target_listings")
+    if anomaly.sample.max_listings > 100:
+        errors.append("anomaly.sample.max_listings must be <= 100")
+    return errors
 
 
 def _optional_float(form: Any, name: str) -> float | None:

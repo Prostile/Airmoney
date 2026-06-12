@@ -8,11 +8,16 @@ from typing import Any
 
 from airmoney.config.models import (
     AnomalySettings,
+    BrowserOptimizationSettings,
     Collection,
     EXTERIORS,
+    HistoryOptimizationSettings,
     ItemDefinition,
     ParserSettings,
+    ScanOptimizationSettings,
+    ScanQueueSettings,
     SnipingRule,
+    SteamGuardSettings,
     TelegramAlertSettings,
     to_bool,
     utc_now_iso,
@@ -90,6 +95,11 @@ def export_config(repo: Repository) -> str:
             "min_roi_percent": settings.default_min_roi_percent,
         },
         "anomaly": settings.anomaly_settings.to_dict(),
+        "scan_queue": settings.scan_queue_settings.to_dict(),
+        "browser_optimization": settings.browser_optimization_settings.to_dict(),
+        "scan_optimization": settings.scan_optimization_settings.to_dict(),
+        "history_optimization": settings.history_optimization_settings.to_dict(),
+        "steam_guard": settings.steam_guard_settings.to_dict(),
         "telegram": {
             "enabled": settings.telegram_alerts_enabled,
             "min_alert_level": settings.telegram_min_alert_level,
@@ -195,6 +205,11 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
     profit = _section(data, "profit", errors)
     telegram = _section(data, "telegram", errors)
     anomaly = _section(data, "anomaly", errors)
+    scan_queue = _section(data, "scan_queue", errors)
+    browser_optimization = _section(data, "browser_optimization", errors)
+    scan_optimization = _section(data, "scan_optimization", errors)
+    history_optimization = _section(data, "history_optimization", errors)
+    steam_guard = _section(data, "steam_guard", errors)
     settings = ParserSettings()
     settings.enabled = to_bool(parser.get("enabled", settings.enabled))
     settings.check_interval_seconds = _positive_int(parser.get("check_interval_seconds", settings.check_interval_seconds), "parser.check_interval_seconds", errors)
@@ -224,6 +239,11 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
         errors.append("telegram.min_alert_level должен быть critical/good/watch/skip.")
     anomaly_settings = _parse_anomaly(anomaly, errors)
     settings.set_anomaly_settings(anomaly_settings)
+    settings.set_scan_queue_settings(_parse_scan_queue(scan_queue, errors))
+    settings.set_browser_optimization_settings(_parse_browser_optimization(browser_optimization, errors))
+    settings.set_scan_optimization_settings(_parse_scan_optimization(scan_optimization, errors))
+    settings.set_history_optimization_settings(_parse_history_optimization(history_optimization, errors))
+    settings.set_steam_guard_settings(_parse_steam_guard(steam_guard, errors))
     telegram_settings = _parse_telegram_alert_settings(telegram, errors)
     settings.set_telegram_alert_settings(telegram_settings)
     settings.updated_at = utc_now_iso()
@@ -232,6 +252,7 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
 
 def _parse_anomaly(data: dict[str, Any], errors: list[str]) -> AnomalySettings:
     settings = AnomalySettings.from_dict(data)
+    _validate_anomaly_sample_settings(settings, errors)
     if settings.sample.sort_by not in {"price_asc", "none"}:
         errors.append("anomaly.sample.sort_by должен быть price_asc или none.")
     if settings.sample.target_listings > settings.sample.max_listings:
@@ -251,6 +272,51 @@ def _parse_anomaly(data: dict[str, Any], errors: list[str]) -> AnomalySettings:
             errors.append(f"anomaly.float_buckets[{bucket.id}].min/max должны быть неотрицательными.")
         if bucket.min > bucket.max:
             errors.append(f"anomaly.float_buckets[{bucket.id}].min не должен быть больше max.")
+    return settings
+
+
+def _validate_anomaly_sample_settings(settings: AnomalySettings, errors: list[str]) -> None:
+    if settings.sample.min_listings < 3:
+        errors.append("anomaly.sample.min_listings must be >= 3.")
+    if settings.sample.target_listings < settings.sample.min_listings:
+        errors.append("anomaly.sample.target_listings must be >= min_listings.")
+    if settings.sample.max_listings < settings.sample.target_listings:
+        errors.append("anomaly.sample.max_listings must be >= target_listings.")
+    if settings.sample.max_listings > 100:
+        errors.append("anomaly.sample.max_listings must be <= 100.")
+
+
+def _parse_scan_queue(data: dict[str, Any], errors: list[str]) -> ScanQueueSettings:
+    settings = ScanQueueSettings.from_dict(data)
+    if settings.max_items_per_cycle < 1:
+        errors.append("scan_queue.max_items_per_cycle must be >= 1.")
+    return settings
+
+
+def _parse_browser_optimization(data: dict[str, Any], errors: list[str]) -> BrowserOptimizationSettings:
+    settings = BrowserOptimizationSettings.from_dict(data)
+    allowed = {"image", "media", "font", "stylesheet"}
+    unknown = [value for value in settings.blocked_resource_types if value not in allowed]
+    if unknown:
+        errors.append(f"browser_optimization.blocked_resource_types contains unsupported values: {', '.join(unknown)}.")
+    return settings
+
+
+def _parse_scan_optimization(data: dict[str, Any], errors: list[str]) -> ScanOptimizationSettings:
+    settings = ScanOptimizationSettings.from_dict(data)
+    if settings.shallow_target_listings < 4:
+        errors.append("scan_optimization.shallow_target_listings must be >= 4.")
+    return settings
+
+
+def _parse_history_optimization(data: dict[str, Any], errors: list[str]) -> HistoryOptimizationSettings:
+    return HistoryOptimizationSettings.from_dict(data)
+
+
+def _parse_steam_guard(data: dict[str, Any], errors: list[str]) -> SteamGuardSettings:
+    settings = SteamGuardSettings.from_dict(data)
+    if settings.max_cooldown_seconds < settings.cooldown_on_limit_seconds:
+        errors.append("steam_guard.max_cooldown_seconds must be >= cooldown_on_limit_seconds.")
     return settings
 
 

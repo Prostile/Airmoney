@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -52,6 +53,11 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             selected_exteriors TEXT NOT NULL,
             anomaly_config TEXT NOT NULL DEFAULT '{}',
             telegram_config TEXT NOT NULL DEFAULT '{}',
+            scan_queue_config TEXT NOT NULL DEFAULT '{}',
+            browser_optimization_config TEXT NOT NULL DEFAULT '{}',
+            scan_optimization_config TEXT NOT NULL DEFAULT '{}',
+            history_optimization_config TEXT NOT NULL DEFAULT '{}',
+            steam_guard_config TEXT NOT NULL DEFAULT '{}',
             updated_at TEXT NOT NULL
         );
 
@@ -214,6 +220,16 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             listings_saved INTEGER NOT NULL DEFAULT 0,
             candidates_saved INTEGER NOT NULL DEFAULT 0,
             alerts_sent INTEGER NOT NULL DEFAULT 0,
+            selected_targets_count INTEGER NOT NULL DEFAULT 0,
+            skipped_by_queue_count INTEGER NOT NULL DEFAULT 0,
+            skipped_by_item_cooldown_count INTEGER NOT NULL DEFAULT 0,
+            skipped_by_collection_cooldown_count INTEGER NOT NULL DEFAULT 0,
+            early_stop_count INTEGER NOT NULL DEFAULT 0,
+            resource_blocked_count INTEGER NOT NULL DEFAULT 0,
+            shallow_skipped_count INTEGER NOT NULL DEFAULT 0,
+            deep_scan_count INTEGER NOT NULL DEFAULT 0,
+            steam_cooldown_active INTEGER NOT NULL DEFAULT 0,
+            steam_cooldown_until TEXT NOT NULL DEFAULT '',
             error TEXT NOT NULL DEFAULT ''
         );
 
@@ -250,6 +266,35 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             UNIQUE(item_id, float_bucket),
             FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS scan_item_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_run_id TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            cards_seen INTEGER NOT NULL DEFAULT 0,
+            exact_cards INTEGER NOT NULL DEFAULT 0,
+            target_listings_reached INTEGER NOT NULL DEFAULT 0,
+            early_stop_reason TEXT NOT NULL DEFAULT '',
+            shallow_gap_percent REAL,
+            deep_scan_performed INTEGER NOT NULL DEFAULT 0,
+            used_historical_baseline INTEGER NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (scan_run_id) REFERENCES scan_runs(id) ON DELETE CASCADE,
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_scan_item_results_run
+            ON scan_item_results(scan_run_id, item_id);
         """
     )
 
@@ -264,6 +309,11 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
     settings_defaults = {
         "anomaly_config": ParserSettings().anomaly_config,
         "telegram_config": ParserSettings().telegram_config,
+        "scan_queue_config": ParserSettings().scan_queue_config,
+        "browser_optimization_config": ParserSettings().browser_optimization_config,
+        "scan_optimization_config": ParserSettings().scan_optimization_config,
+        "history_optimization_config": ParserSettings().history_optimization_config,
+        "steam_guard_config": ParserSettings().steam_guard_config,
     }
     settings_columns = _table_columns(connection, "settings")
     for column, default_value in settings_defaults.items():
@@ -284,6 +334,16 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "current_item_name": "TEXT NOT NULL DEFAULT ''",
         "progress_message": "TEXT NOT NULL DEFAULT ''",
         "updated_at": "TEXT NOT NULL DEFAULT ''",
+        "selected_targets_count": "INTEGER NOT NULL DEFAULT 0",
+        "skipped_by_queue_count": "INTEGER NOT NULL DEFAULT 0",
+        "skipped_by_item_cooldown_count": "INTEGER NOT NULL DEFAULT 0",
+        "skipped_by_collection_cooldown_count": "INTEGER NOT NULL DEFAULT 0",
+        "early_stop_count": "INTEGER NOT NULL DEFAULT 0",
+        "resource_blocked_count": "INTEGER NOT NULL DEFAULT 0",
+        "shallow_skipped_count": "INTEGER NOT NULL DEFAULT 0",
+        "deep_scan_count": "INTEGER NOT NULL DEFAULT 0",
+        "steam_cooldown_active": "INTEGER NOT NULL DEFAULT 0",
+        "steam_cooldown_until": "TEXT NOT NULL DEFAULT ''",
     }
     for column, definition in scan_run_defaults.items():
         if column not in scan_run_columns:
@@ -330,11 +390,91 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
             WHERE snapshot_count = 0
             """
         )
+    _apply_safe_settings_profile_once(connection)
 
 
 def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
     rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
     return {str(row["name"]) for row in rows}
+
+
+def _apply_safe_settings_profile_once(connection: sqlite3.Connection) -> None:
+    marker = connection.execute(
+        "SELECT value FROM app_state WHERE key = 'safe_settings_profile_applied'"
+    ).fetchone()
+    if marker:
+        return
+    row = connection.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+    if row is None:
+        return
+    data = dict(row)
+    settings = ParserSettings()
+    anomaly_config = _merge_json(data.get("anomaly_config"), settings.anomaly_config)
+    sample = anomaly_config.setdefault("sample", {})
+    sample["min_listings"] = 5
+    sample["target_listings"] = 12
+    sample["max_listings"] = 20
+    sample.setdefault("exclude_candidate_from_baseline", True)
+    sample.setdefault("require_exact_item_match", True)
+    sample.setdefault("sort_by", "price_asc")
+
+    now = settings.updated_at
+    connection.execute(
+        """
+        UPDATE settings
+        SET check_interval_seconds = CASE
+                WHEN check_interval_seconds < 1200 THEN 1200 ELSE check_interval_seconds
+            END,
+            max_scrolls = 0,
+            request_delay_seconds = CASE
+                WHEN request_delay_seconds < 10.0 THEN 10.0 ELSE request_delay_seconds
+            END,
+            steam_block_pause_seconds = CASE
+                WHEN steam_block_pause_seconds < 7200 THEN 7200 ELSE steam_block_pause_seconds
+            END,
+            anomaly_config = ?,
+            scan_queue_config = ?,
+            browser_optimization_config = ?,
+            scan_optimization_config = ?,
+            history_optimization_config = ?,
+            steam_guard_config = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            json.dumps(anomaly_config, ensure_ascii=False),
+            settings.scan_queue_config,
+            settings.browser_optimization_config,
+            settings.scan_optimization_config,
+            settings.history_optimization_config,
+            settings.steam_guard_config,
+            now,
+        ),
+    )
+    connection.execute(
+        """
+        INSERT INTO app_state (key, value, updated_at)
+        VALUES ('safe_settings_profile_applied', '1', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        """,
+        (now,),
+    )
+
+
+def _merge_json(current: str | None, default: str) -> dict:
+    try:
+        base = json.loads(default or "{}")
+    except Exception:
+        base = {}
+    try:
+        raw = json.loads(current or "{}")
+    except Exception:
+        raw = {}
+    if not isinstance(base, dict):
+        base = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    return {**base, **raw}
 
 
 def ensure_default_settings(connection: sqlite3.Connection) -> None:
@@ -352,7 +492,9 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             telegram_alerts_enabled, telegram_min_alert_level, web_table_limit,
             default_roi_percent, default_market_fee_percent, default_min_profit_rub,
             default_min_roi_percent, selected_exteriors, anomaly_config,
-            telegram_config, updated_at
+            telegram_config, scan_queue_config, browser_optimization_config,
+            scan_optimization_config, history_optimization_config, steam_guard_config,
+            updated_at
         )
         VALUES (
             1, :enabled, :check_interval_seconds, :headless, :max_scrolls,
@@ -361,7 +503,9 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             :telegram_alerts_enabled, :telegram_min_alert_level, :web_table_limit,
             :default_roi_percent, :default_market_fee_percent, :default_min_profit_rub,
             :default_min_roi_percent, :selected_exteriors, :anomaly_config,
-            :telegram_config, :updated_at
+            :telegram_config, :scan_queue_config, :browser_optimization_config,
+            :scan_optimization_config, :history_optimization_config, :steam_guard_config,
+            :updated_at
         )
         """,
         {
@@ -385,6 +529,11 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             "selected_exteriors": settings.selected_exteriors,
             "anomaly_config": settings.anomaly_config,
             "telegram_config": settings.telegram_config,
+            "scan_queue_config": settings.scan_queue_config,
+            "browser_optimization_config": settings.browser_optimization_config,
+            "scan_optimization_config": settings.scan_optimization_config,
+            "history_optimization_config": settings.history_optimization_config,
+            "steam_guard_config": settings.steam_guard_config,
             "updated_at": settings.updated_at,
         },
     )

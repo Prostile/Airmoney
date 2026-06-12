@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+import random
 from contextlib import contextmanager
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,9 @@ from airmoney.config.models import (
     MarketListing,
     ParserSettings,
     SnipingRule,
+    parse_dt,
     to_bool,
+    utc_now,
     utc_now_iso,
 )
 from airmoney.storage.db import connect, initialize_database
@@ -57,6 +61,15 @@ def _date_end(value: str) -> str:
     if len(text) == 10:
         return text + "T23:59:59"
     return text
+
+
+@dataclass
+class ScanTargetSelection:
+    targets: list[dict[str, Any]]
+    selected_targets_count: int = 0
+    skipped_by_queue_count: int = 0
+    skipped_by_item_cooldown_count: int = 0
+    skipped_by_collection_cooldown_count: int = 0
 
 
 class Repository:
@@ -100,6 +113,15 @@ class Repository:
             selected_exteriors=data.get("selected_exteriors") or ParserSettings().selected_exteriors,
             anomaly_config=data.get("anomaly_config") or ParserSettings().anomaly_config,
             telegram_config=data.get("telegram_config") or ParserSettings().telegram_config,
+            scan_queue_config=data.get("scan_queue_config") or ParserSettings().scan_queue_config,
+            browser_optimization_config=(
+                data.get("browser_optimization_config") or ParserSettings().browser_optimization_config
+            ),
+            scan_optimization_config=data.get("scan_optimization_config") or ParserSettings().scan_optimization_config,
+            history_optimization_config=(
+                data.get("history_optimization_config") or ParserSettings().history_optimization_config
+            ),
+            steam_guard_config=data.get("steam_guard_config") or ParserSettings().steam_guard_config,
             updated_at=data["updated_at"],
         )
 
@@ -129,6 +151,11 @@ class Repository:
                     selected_exteriors = :selected_exteriors,
                     anomaly_config = :anomaly_config,
                     telegram_config = :telegram_config,
+                    scan_queue_config = :scan_queue_config,
+                    browser_optimization_config = :browser_optimization_config,
+                    scan_optimization_config = :scan_optimization_config,
+                    history_optimization_config = :history_optimization_config,
+                    steam_guard_config = :steam_guard_config,
                     updated_at = :updated_at
                 WHERE id = 1
                 """,
@@ -405,6 +432,7 @@ class Repository:
             rows = connection.execute(
                 f"""
                 SELECT i.*, c.name AS collection_name, r.id AS rule_id,
+                       r.enabled AS rule_enabled, r.priority,
                        r.max_buy_price_rub, r.float_min, r.float_max, r.pattern_ranges
                 FROM items i
                 JOIN collections c ON c.id = i.collection_id
@@ -415,6 +443,74 @@ class Repository:
                 params,
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def select_scan_targets(
+        self,
+        settings: ParserSettings,
+        collection_id: str | None = None,
+        item_id: str | None = None,
+    ) -> ScanTargetSelection:
+        rows = self.build_scan_targets(collection_id=collection_id, item_id=item_id)
+        if item_id:
+            return ScanTargetSelection(targets=rows, selected_targets_count=len(rows))
+
+        queue = settings.scan_queue_settings
+        if not queue.enabled:
+            return ScanTargetSelection(targets=rows, selected_targets_count=len(rows))
+
+        now = utc_now()
+        eligible: list[dict[str, Any]] = []
+        skipped_item = 0
+        skipped_collection = 0
+        collection_latest: dict[str, Any] = {}
+        for row in rows:
+            collection_key = str(row.get("collection_id") or "")
+            last = parse_dt(row.get("last_parsed_at"))
+            current_latest = collection_latest.get(collection_key)
+            if last is not None and (current_latest is None or last > current_latest):
+                collection_latest[collection_key] = last
+
+        for row in rows:
+            last = parse_dt(row.get("last_parsed_at"))
+            if (
+                queue.item_cooldown_seconds > 0
+                and last is not None
+                and now - last < timedelta(seconds=queue.item_cooldown_seconds)
+            ):
+                skipped_item += 1
+                continue
+            collection_key = str(row.get("collection_id") or "")
+            collection_last = collection_latest.get(collection_key)
+            if (
+                queue.collection_cooldown_seconds > 0
+                and collection_last is not None
+                and now - collection_last < timedelta(seconds=queue.collection_cooldown_seconds)
+            ):
+                skipped_collection += 1
+                continue
+            eligible.append(row)
+
+        def sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+            priority = int(row.get("priority") or 0)
+            last = parse_dt(row.get("last_parsed_at"))
+            last_key = last.timestamp() if last is not None else 0
+            return (
+                -priority if queue.priority_first else 0,
+                last_key if queue.rotate_by_last_parsed_at else 0,
+                random.random() if queue.random_jitter else 0,
+                str(row.get("market_hash_name") or ""),
+            )
+
+        ordered = sorted(eligible, key=sort_key)
+        selected = ordered[: queue.max_items_per_cycle]
+        skipped_queue = max(0, len(eligible) - len(selected))
+        return ScanTargetSelection(
+            targets=selected,
+            selected_targets_count=len(selected),
+            skipped_by_queue_count=skipped_queue,
+            skipped_by_item_cooldown_count=skipped_item,
+            skipped_by_collection_cooldown_count=skipped_collection,
+        )
 
     def scan_target_summary(
         self,
@@ -657,6 +753,190 @@ class Repository:
                 asdict(candidate),
             )
 
+    def save_item_scan_success(
+        self,
+        run_id: str,
+        item_id: str,
+        listings: list[MarketListing],
+        candidates: list[Candidate],
+        snapshots: list[MarketSnapshot] | None = None,
+        snapshot_alpha: float = 0.25,
+        item_result: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        now = utc_now_iso()
+        snapshots = snapshots or []
+        item_result = item_result or {}
+        with self.connection() as connection:
+            connection.execute(
+                """
+                UPDATE market_listings
+                SET is_active = 0
+                WHERE item_definition_id = ?
+                """,
+                (item_id,),
+            )
+            for listing in listings:
+                connection.execute(
+                    """
+                    INSERT INTO market_listings (
+                        id, item_definition_id, rule_id, skin_name, market_hash_name,
+                        listing_url, search_url, buy_price_rub, buy_price_original,
+                        currency_original, currency_rate, currency_source, currency_fetched_at, float_value,
+                        pattern, wear_name, raw_text, first_seen_at, last_seen_at,
+                        is_active, parse_status
+                    )
+                    VALUES (
+                        :id, :item_definition_id, :rule_id, :skin_name, :market_hash_name,
+                        :listing_url, :search_url, :buy_price_rub, :buy_price_original,
+                        :currency_original, :currency_rate, :currency_source, :currency_fetched_at, :float_value,
+                        :pattern, :wear_name, :raw_text, :first_seen_at, :last_seen_at,
+                        :is_active, :parse_status
+                    )
+                    ON CONFLICT(id) DO UPDATE SET
+                        rule_id = excluded.rule_id,
+                        buy_price_rub = excluded.buy_price_rub,
+                        buy_price_original = excluded.buy_price_original,
+                        currency_original = excluded.currency_original,
+                        currency_rate = excluded.currency_rate,
+                        currency_source = excluded.currency_source,
+                        currency_fetched_at = excluded.currency_fetched_at,
+                        float_value = excluded.float_value,
+                        pattern = excluded.pattern,
+                        wear_name = excluded.wear_name,
+                        raw_text = excluded.raw_text,
+                        last_seen_at = excluded.last_seen_at,
+                        is_active = excluded.is_active,
+                        parse_status = excluded.parse_status
+                    """,
+                    {
+                        **asdict(listing),
+                        "is_active": int(listing.is_active),
+                    },
+                )
+            for candidate in candidates:
+                candidate.updated_at = now
+                existing = connection.execute(
+                    "SELECT created_at, status FROM candidates WHERE listing_id = ?",
+                    (candidate.listing_id,),
+                ).fetchone()
+                if existing:
+                    candidate.created_at = existing["created_at"]
+                    if existing["status"] != "new":
+                        candidate.status = existing["status"]
+                connection.execute(
+                    """
+                    INSERT INTO candidates (
+                        id, listing_id, rule_id, buy_price_rub, estimated_resale_price_rub,
+                        estimated_net_resale_rub, estimated_profit_rub,
+                        estimated_roi_percent, market_fee_percent, recommendation_level,
+                        recommendation_score, recommendation_reason, analysis_mode,
+                        alert_level, anomaly_score, fair_price_rub, local_median_rub,
+                        float_peer_median_rub, historical_baseline_rub,
+                        local_discount_percent, float_peer_discount_percent,
+                        historical_discount_percent, robust_z, float_bucket,
+                        exact_item_match, sample_size, neighbor_count,
+                        anomaly_reasons, parsed_at, status, created_at, updated_at
+                    )
+                    VALUES (
+                        :id, :listing_id, :rule_id, :buy_price_rub, :estimated_resale_price_rub,
+                        :estimated_net_resale_rub, :estimated_profit_rub,
+                        :estimated_roi_percent, :market_fee_percent, :recommendation_level,
+                        :recommendation_score, :recommendation_reason, :analysis_mode,
+                        :alert_level, :anomaly_score, :fair_price_rub, :local_median_rub,
+                        :float_peer_median_rub, :historical_baseline_rub,
+                        :local_discount_percent, :float_peer_discount_percent,
+                        :historical_discount_percent, :robust_z, :float_bucket,
+                        :exact_item_match, :sample_size, :neighbor_count,
+                        :anomaly_reasons, :parsed_at, :status, :created_at, :updated_at
+                    )
+                    ON CONFLICT(listing_id) DO UPDATE SET
+                        rule_id = excluded.rule_id,
+                        buy_price_rub = excluded.buy_price_rub,
+                        estimated_resale_price_rub = excluded.estimated_resale_price_rub,
+                        estimated_net_resale_rub = excluded.estimated_net_resale_rub,
+                        estimated_profit_rub = excluded.estimated_profit_rub,
+                        estimated_roi_percent = excluded.estimated_roi_percent,
+                        market_fee_percent = excluded.market_fee_percent,
+                        recommendation_level = excluded.recommendation_level,
+                        recommendation_score = excluded.recommendation_score,
+                        recommendation_reason = excluded.recommendation_reason,
+                        analysis_mode = excluded.analysis_mode,
+                        alert_level = excluded.alert_level,
+                        anomaly_score = excluded.anomaly_score,
+                        fair_price_rub = excluded.fair_price_rub,
+                        local_median_rub = excluded.local_median_rub,
+                        float_peer_median_rub = excluded.float_peer_median_rub,
+                        historical_baseline_rub = excluded.historical_baseline_rub,
+                        local_discount_percent = excluded.local_discount_percent,
+                        float_peer_discount_percent = excluded.float_peer_discount_percent,
+                        historical_discount_percent = excluded.historical_discount_percent,
+                        robust_z = excluded.robust_z,
+                        float_bucket = excluded.float_bucket,
+                        exact_item_match = excluded.exact_item_match,
+                        sample_size = excluded.sample_size,
+                        neighbor_count = excluded.neighbor_count,
+                        anomaly_reasons = excluded.anomaly_reasons,
+                        parsed_at = excluded.parsed_at,
+                        status = excluded.status,
+                        updated_at = excluded.updated_at
+                    """,
+                    asdict(candidate),
+                )
+            self._save_market_snapshots_in_connection(connection, snapshots, snapshot_alpha)
+            last_seen_at = max((listing.last_seen_at for listing in listings), default=now)
+            connection.execute(
+                "UPDATE items SET last_parsed_at = ? WHERE id = ?",
+                (last_seen_at, item_id),
+            )
+            self._insert_scan_item_result(connection, run_id, item_id, item_result, now)
+        return {"listings_saved": len(listings), "candidates_saved": len(candidates)}
+
+    def save_item_scan_failure(
+        self,
+        run_id: str,
+        item_id: str,
+        item_result: dict[str, Any] | None = None,
+    ) -> None:
+        now = utc_now_iso()
+        with self.connection() as connection:
+            self._insert_scan_item_result(connection, run_id, item_id, item_result or {}, now)
+
+    def _insert_scan_item_result(
+        self,
+        connection: sqlite3.Connection,
+        run_id: str,
+        item_id: str,
+        item_result: dict[str, Any],
+        now: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO scan_item_results (
+                scan_run_id, item_id, status, cards_seen, exact_cards,
+                target_listings_reached, early_stop_reason, shallow_gap_percent,
+                deep_scan_performed, used_historical_baseline, duration_ms,
+                error, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                item_id,
+                str(item_result.get("status") or "success"),
+                int(item_result.get("cards_seen") or 0),
+                int(item_result.get("exact_cards") or 0),
+                int(bool(item_result.get("target_listings_reached"))),
+                str(item_result.get("early_stop_reason") or ""),
+                item_result.get("shallow_gap_percent"),
+                int(bool(item_result.get("deep_scan_performed"))),
+                int(bool(item_result.get("used_historical_baseline"))),
+                int(item_result.get("duration_ms") or 0),
+                str(item_result.get("error") or "")[:2000],
+                now,
+                now,
+            ),
+        )
+
     def list_candidates(
         self,
         only_new: bool = False,
@@ -874,80 +1154,90 @@ class Repository:
     ) -> None:
         if not snapshots:
             return
-        now = utc_now_iso()
         with self.connection() as connection:
-            for snapshot in snapshots:
+            self._save_market_snapshots_in_connection(connection, snapshots, alpha)
+
+    def _save_market_snapshots_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        snapshots: list[MarketSnapshot],
+        alpha: float = 0.25,
+    ) -> None:
+        if not snapshots:
+            return
+        now = utc_now_iso()
+        for snapshot in snapshots:
+            connection.execute(
+                """
+                INSERT INTO market_snapshot (
+                    item_id, scan_time, float_bucket, sample_size,
+                    floor_price_rub, q10_price_rub, q25_price_rub,
+                    median_price_rub, q75_price_rub
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot.item_id,
+                    now,
+                    snapshot.float_bucket,
+                    snapshot.sample_size,
+                    snapshot.floor_price_rub,
+                    snapshot.q10_price_rub,
+                    snapshot.q25_price_rub,
+                    snapshot.median_price_rub,
+                    snapshot.q75_price_rub,
+                ),
+            )
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM market_baseline
+                WHERE item_id = ? AND float_bucket = ?
+                """,
+                (snapshot.item_id, snapshot.float_bucket),
+            ).fetchone()
+            if existing:
                 connection.execute(
                     """
-                    INSERT INTO market_snapshot (
-                        item_id, scan_time, float_bucket, sample_size,
-                        floor_price_rub, q10_price_rub, q25_price_rub,
-                        median_price_rub, q75_price_rub
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        snapshot.item_id,
-                        now,
-                        snapshot.float_bucket,
-                        snapshot.sample_size,
-                        snapshot.floor_price_rub,
-                        snapshot.q10_price_rub,
-                        snapshot.q25_price_rub,
-                        snapshot.median_price_rub,
-                        snapshot.q75_price_rub,
-                    ),
-                )
-                existing = connection.execute(
-                    """
-                    SELECT *
-                    FROM market_baseline
+                    UPDATE market_baseline
+                    SET rolling_median_rub = ?,
+                        rolling_q25_rub = ?,
+                        rolling_floor_rub = ?,
+                        sample_count = sample_count + ?,
+                        snapshot_count = snapshot_count + 1,
+                        updated_at = ?
                     WHERE item_id = ? AND float_bucket = ?
                     """,
-                    (snapshot.item_id, snapshot.float_bucket),
-                ).fetchone()
-                if existing:
-                    connection.execute(
-                        """
-                        UPDATE market_baseline
-                        SET rolling_median_rub = ?,
-                            rolling_q25_rub = ?,
-                            rolling_floor_rub = ?,
-                            sample_count = sample_count + ?,
-                            snapshot_count = snapshot_count + 1,
-                            updated_at = ?
-                        WHERE item_id = ? AND float_bucket = ?
-                        """,
-                        (
-                            ewma(existing["rolling_median_rub"], snapshot.median_price_rub, alpha),
-                            ewma(existing["rolling_q25_rub"], snapshot.q25_price_rub, alpha),
-                            ewma(existing["rolling_floor_rub"], snapshot.floor_price_rub, alpha),
-                            snapshot.sample_size,
-                            now,
-                            snapshot.item_id,
-                            snapshot.float_bucket,
-                        ),
-                    )
-                    continue
-                connection.execute(
-                    """
-                    INSERT INTO market_baseline (
-                        item_id, float_bucket, rolling_median_rub,
-                        rolling_q25_rub, rolling_floor_rub, sample_count, snapshot_count, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
                     (
+                        ewma(existing["rolling_median_rub"], snapshot.median_price_rub, alpha),
+                        ewma(existing["rolling_q25_rub"], snapshot.q25_price_rub, alpha),
+                        ewma(existing["rolling_floor_rub"], snapshot.floor_price_rub, alpha),
+                        snapshot.sample_size,
+                        now,
                         snapshot.item_id,
                         snapshot.float_bucket,
-                        snapshot.median_price_rub,
-                        snapshot.q25_price_rub,
-                        snapshot.floor_price_rub,
-                        snapshot.sample_size,
-                        1,
-                        now,
                     ),
                 )
+                continue
+            connection.execute(
+                """
+                INSERT INTO market_baseline (
+                    item_id, float_bucket, rolling_median_rub,
+                    rolling_q25_rub, rolling_floor_rub, sample_count, snapshot_count, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot.item_id,
+                    snapshot.float_bucket,
+                    snapshot.median_price_rub,
+                    snapshot.q25_price_rub,
+                    snapshot.floor_price_rub,
+                    snapshot.sample_size,
+                    1,
+                    now,
+                ),
+            )
 
 
     def rule_stats(self, limit: int = 200) -> list[dict[str, Any]]:
@@ -1097,6 +1387,71 @@ class Repository:
                 ),
             )
 
+    def get_app_state(self, key: str, default: str = "") -> str:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM app_state WHERE key = ?",
+                (key,),
+            ).fetchone()
+        return str(row["value"]) if row else default
+
+    def set_app_state(self, values: dict[str, Any]) -> None:
+        now = utc_now_iso()
+        with self.connection() as connection:
+            for key, value in values.items():
+                connection.execute(
+                    """
+                    INSERT INTO app_state (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (str(key), str(value or ""), now),
+                )
+
+    def get_steam_guard_state(self) -> dict[str, Any]:
+        keys = [
+            "steam_cooldown_until",
+            "steam_cooldown_reason",
+            "steam_consecutive_blocks",
+            "last_steam_error_at",
+        ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"SELECT key, value FROM app_state WHERE key IN ({','.join('?' for _ in keys)})",
+                keys,
+            ).fetchall()
+        state = {
+            "steam_cooldown_until": "",
+            "steam_cooldown_reason": "",
+            "steam_consecutive_blocks": 0,
+            "last_steam_error_at": "",
+        }
+        for row in rows:
+            state[str(row["key"])] = row["value"]
+        try:
+            state["steam_consecutive_blocks"] = int(state.get("steam_consecutive_blocks") or 0)
+        except Exception:
+            state["steam_consecutive_blocks"] = 0
+        return state
+
+    def set_steam_guard_state(
+        self,
+        cooldown_until: str = "",
+        reason: str = "",
+        consecutive_blocks: int | None = None,
+        last_error_at: str = "",
+    ) -> None:
+        values: dict[str, Any] = {
+            "steam_cooldown_until": cooldown_until,
+            "steam_cooldown_reason": reason,
+            "last_steam_error_at": last_error_at,
+        }
+        if consecutive_blocks is not None:
+            values["steam_consecutive_blocks"] = int(consecutive_blocks)
+        self.set_app_state(values)
+
     def start_scan_run(
         self,
         trigger: str,
@@ -1161,6 +1516,16 @@ class Repository:
         candidates_saved: int = 0,
         alerts_sent: int = 0,
         error: str = "",
+        selected_targets_count: int = 0,
+        skipped_by_queue_count: int = 0,
+        skipped_by_item_cooldown_count: int = 0,
+        skipped_by_collection_cooldown_count: int = 0,
+        early_stop_count: int = 0,
+        resource_blocked_count: int = 0,
+        shallow_skipped_count: int = 0,
+        deep_scan_count: int = 0,
+        steam_cooldown_active: bool = False,
+        steam_cooldown_until: str = "",
     ) -> None:
         message = error or ("Скан завершён." if status == "success" else f"Скан: {status}.")
         with self.connection() as connection:
@@ -1179,6 +1544,16 @@ class Repository:
                     listings_saved = ?,
                     candidates_saved = ?,
                     alerts_sent = ?,
+                    selected_targets_count = ?,
+                    skipped_by_queue_count = ?,
+                    skipped_by_item_cooldown_count = ?,
+                    skipped_by_collection_cooldown_count = ?,
+                    early_stop_count = ?,
+                    resource_blocked_count = ?,
+                    shallow_skipped_count = ?,
+                    deep_scan_count = ?,
+                    steam_cooldown_active = ?,
+                    steam_cooldown_until = ?,
                     error = ?
                 WHERE id = ?
                 """,
@@ -1192,6 +1567,16 @@ class Repository:
                     int(listings_saved),
                     int(candidates_saved),
                     int(alerts_sent),
+                    int(selected_targets_count),
+                    int(skipped_by_queue_count),
+                    int(skipped_by_item_cooldown_count),
+                    int(skipped_by_collection_cooldown_count),
+                    int(early_stop_count),
+                    int(resource_blocked_count),
+                    int(shallow_skipped_count),
+                    int(deep_scan_count),
+                    int(steam_cooldown_active),
+                    steam_cooldown_until,
                     error[:2000],
                     run_id,
                 ),
@@ -1209,6 +1594,28 @@ class Repository:
             rows = connection.execute(
                 "SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT ?",
                 (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_scan_item_results(self, scan_run_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if scan_run_id:
+            clauses.append("sir.scan_run_id = ?")
+            params.append(scan_run_id)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(limit)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT sir.*, i.display_name, i.market_hash_name
+                FROM scan_item_results sir
+                LEFT JOIN items i ON i.id = sir.item_id
+                {where}
+                ORDER BY sir.created_at DESC, sir.id DESC
+                LIMIT ?
+                """,
+                params,
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -1258,6 +1665,11 @@ class Repository:
                 selected_exteriors = :selected_exteriors,
                 anomaly_config = :anomaly_config,
                 telegram_config = :telegram_config,
+                scan_queue_config = :scan_queue_config,
+                browser_optimization_config = :browser_optimization_config,
+                scan_optimization_config = :scan_optimization_config,
+                history_optimization_config = :history_optimization_config,
+                steam_guard_config = :steam_guard_config,
                 updated_at = :updated_at
             WHERE id = 1
             """,
