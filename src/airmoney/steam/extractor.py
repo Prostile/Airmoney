@@ -46,6 +46,34 @@ EXTERIOR_CANONICAL = {
 }
 
 
+# Correct Unicode-aware patterns override legacy mojibake patterns above.
+RUBLE_SYMBOL = "\u20bd"
+EURO_SYMBOL = "\u20ac"
+LEGACY_RUBLE_SYMBOL = "\u0432\u201a\u0405"
+LEGACY_RUBLE_WORD = "\u0421\u0402\u0421\u0453\u0420\u00b1"
+LEGACY_EURO_SYMBOL = "\u0432\u201a\u00ac"
+RUBLE_TOKEN_PATTERN = rf"(?:{RUBLE_SYMBOL}|\u0440\u0443\u0431\.?|{LEGACY_RUBLE_SYMBOL}|{LEGACY_RUBLE_WORD}\.?|RUB\b)"
+EURO_TOKEN_PATTERN = rf"(?:{EURO_SYMBOL}|{LEGACY_EURO_SYMBOL}|EUR)"
+PRICE_RUB_RE = re.compile(
+    rf"(?:\bRUB\s*([0-9][0-9,.\u00a0 ]*)|(?:{RUBLE_SYMBOL}|{LEGACY_RUBLE_SYMBOL})\s*([0-9][0-9,.\u00a0 ]*)|"
+    rf"([0-9][0-9,.\u00a0 ]*)\s*{RUBLE_TOKEN_PATTERN})",
+    re.IGNORECASE,
+)
+PRICE_EUR_RE = re.compile(
+    rf"(?:(?:{EURO_SYMBOL}|{LEGACY_EURO_SYMBOL})\s*([0-9][0-9,.\u00a0 ]*)|([0-9][0-9,.\u00a0 ]*)\s*{EURO_TOKEN_PATTERN})",
+    re.IGNORECASE,
+)
+PRICE_MARKERS = (
+    RUBLE_SYMBOL,
+    "\u0440\u0443\u0431",
+    LEGACY_RUBLE_SYMBOL,
+    LEGACY_RUBLE_WORD,
+    "$",
+    EURO_SYMBOL,
+    LEGACY_EURO_SYMBOL,
+)
+
+
 @dataclass
 class ParsedPrice:
     buy_price_rub: float
@@ -130,6 +158,60 @@ def parse_price_values(text: str, rates: CurrencyRates) -> ParsedPrice | None:
         if eur_match:
             raw = eur_match.group(1) or eur_match.group(2)
             price = parse_money_number(raw)
+            return ParsedPrice(
+                buy_price_rub=round(price * rates.eur_to_rub, 2),
+                buy_price_original=round(price, 4),
+                currency_original="EUR",
+                currency_rate=rates.eur_to_rub,
+                currency_source=rates.source,
+            )
+    return None
+
+
+def _first_match_group(match: re.Match[str]) -> str:
+    for value in match.groups():
+        if value:
+            return value
+    return ""
+
+
+def parse_price_values(text: str, rates: CurrencyRates) -> ParsedPrice | None:
+    text = text.replace("\xa0", " ")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    for line in reversed(lines):
+        upper_line = line.upper()
+        lowered_line = line.lower()
+        if not any(marker.lower() in lowered_line for marker in PRICE_MARKERS) and not any(
+            marker in upper_line for marker in ["RUB", "USD", "EUR"]
+        ):
+            continue
+
+        rub_match = PRICE_RUB_RE.search(line)
+        if rub_match:
+            price = parse_money_number(_first_match_group(rub_match))
+            return ParsedPrice(
+                buy_price_rub=round(price, 2),
+                buy_price_original=round(price, 2),
+                currency_original="RUB",
+                currency_rate=1.0,
+                currency_source=rates.source,
+            )
+
+        usd_match = PRICE_USD_RE.search(line)
+        if usd_match:
+            price = parse_money_number(_first_match_group(usd_match))
+            return ParsedPrice(
+                buy_price_rub=round(price * rates.usd_to_rub, 2),
+                buy_price_original=round(price, 4),
+                currency_original="USD",
+                currency_rate=rates.usd_to_rub,
+                currency_source=rates.source,
+            )
+
+        eur_match = PRICE_EUR_RE.search(line)
+        if eur_match:
+            price = parse_money_number(_first_match_group(eur_match))
             return ParsedPrice(
                 buy_price_rub=round(price * rates.eur_to_rub, 2),
                 buy_price_original=round(price, 4),
@@ -255,6 +337,37 @@ def is_bad_name_line(line: str) -> bool:
         "заказать",
         "сортировать",
         "отфильтровать",
+    ]
+    return any(marker in lowered for marker in bad_markers)
+
+
+def is_bad_name_line(line: str) -> bool:
+    lowered = line.lower()
+    bad_markers = [
+        "community market",
+        "counter-strike",
+        "pattern",
+        "template",
+        "paint seed",
+        "float",
+        "wear",
+        "buy",
+        "sell",
+        "\u0442\u043e\u0440\u0433\u043e\u0432\u0430\u044f \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0430",
+        "\u0433\u043b\u0430\u0432\u043d\u0430\u044f \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430",
+        "\u0448\u0430\u0431\u043b\u043e\u043d",
+        "\u0441\u0442\u0435\u043f\u0435\u043d\u044c \u0438\u0437\u043d\u043e\u0441\u0430",
+        "\u043a\u0443\u043f\u0438\u0442\u044c",
+        "\u0440\u0443\u0431",
+        RUBLE_SYMBOL,
+        "$",
+        "usd",
+        EURO_SYMBOL,
+        "eur",
+        "\u0437\u0430\u044f\u0432\u043e\u043a",
+        "\u0437\u0430\u043a\u0430\u0437\u0430\u0442\u044c",
+        "\u0441\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c",
+        "\u043e\u0442\u0444\u0438\u043b\u044c\u0442\u0440\u043e\u0432\u0430\u0442\u044c",
     ]
     return any(marker in lowered for marker in bad_markers)
 

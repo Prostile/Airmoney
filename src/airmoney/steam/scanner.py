@@ -803,6 +803,7 @@ def _sorted_market_url(url: str, sort_by: str) -> str:
     params = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
     params.update({"sort_column": "price", "sort_dir": "asc"})
     params.setdefault("start", "0")
+    params.setdefault("l", "english")
     return urllib.parse.urlunsplit(
         (
             parsed.scheme,

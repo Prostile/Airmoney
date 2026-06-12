@@ -309,6 +309,7 @@ def test_sorted_market_url_forces_price_ascending():
     )
 
     assert "foo=bar" in url
+    assert "l=english" in url
     assert "sort_column=price" in url
     assert "sort_dir=asc" in url
     assert url.endswith("#p1_price_asc")

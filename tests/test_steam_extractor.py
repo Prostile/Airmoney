@@ -19,6 +19,10 @@ def test_parse_price_rub_prefix():
 
 def test_parse_price_rub_suffix():
     assert parse_price_values("Buy\n472.85 RUB", rates()).buy_price_rub == 472.85
+    assert parse_price_values("Buy\n\u20bd472.85", rates()).buy_price_rub == 472.85
+    assert parse_price_values("Buy\n472,85 \u20bd", rates()).buy_price_rub == 472.85
+    assert parse_price_values("Buy\n\u20ac2.50", rates()).buy_price_rub == 215
+    assert parse_price_values("Buy\n2,50 \u20ac", rates()).buy_price_rub == 215
     assert parse_price_values("Купить\n472,85 руб", rates()).buy_price_rub == 472.85
 
 

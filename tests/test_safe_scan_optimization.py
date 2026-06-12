@@ -14,6 +14,7 @@ from airmoney.config.models import (
 )
 from airmoney.scheduler import monitor as monitor_module
 from airmoney.steam.browser import ResourceBlocker, SteamAccessLimited
+from airmoney.steam.parser import JS_EXTRACT_MARKET_CARDS
 from airmoney.steam.scanner import calculate_floor_gap, looks_price_sorted
 from airmoney.storage.repositories import Repository
 
@@ -26,6 +27,12 @@ def _repo_with_items(tmp_path, count=4):
         repo.save_item(ItemDefinition(id=item_id, collection_id="c1", market_hash_name=f"Skin {index}"))
         repo.save_rule(SnipingRule(id=f"{item_id}_rule", item_definition_id=item_id, priority=index))
     return repo
+
+
+def test_market_card_extractor_matches_real_currency_symbols():
+    assert "\\u20bd" in JS_EXTRACT_MARKET_CARDS
+    assert "\\u20ac" in JS_EXTRACT_MARKET_CARDS
+    assert "\\u0440\\u0443\\u0431" in JS_EXTRACT_MARKET_CARDS
 
 
 def test_scan_queue_limits_and_prioritizes_items(tmp_path):
