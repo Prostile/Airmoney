@@ -4,6 +4,8 @@ import pytest
 
 from airmoney.config.import_export import validate_config
 from airmoney.config.models import (
+    CandidatePack,
+    CandidatePackItem,
     BrowserOptimizationSettings,
     Collection,
     ItemDefinition,
@@ -260,3 +262,145 @@ def test_item_success_inactivates_old_listings_and_saves_new_batch(tmp_path):
     rows = repo.list_market_listings(item_id="i0", active_only=True, limit=10)
     assert saved["listings_saved"] == 1
     assert [row["id"] for row in rows] == ["new"]
+
+
+def test_repository_saves_pack_tables_without_candidate_rows(tmp_path):
+    repo = _repo_with_items(tmp_path, count=1)
+    run_id = repo.start_scan_run("test")
+    now = utc_now_iso()
+    listings = [
+        MarketListing(
+            id=f"listing_{index}",
+            item_definition_id="i0",
+            rule_id="i0_rule",
+            skin_name="Skin 0",
+            market_hash_name="Skin 0",
+            buy_price_rub=price,
+            float_value=0.01 + index * 0.001,
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+        for index, price in enumerate([100, 110, 180])
+    ]
+    pack = CandidatePack(
+        pack_id="pack_i0_2_180",
+        item_id="i0",
+        collection_id="c1",
+        market_hash_name="Skin 0",
+        display_name="Skin 0",
+        listing_ids=["listing_0", "listing_1"],
+        pack_size=2,
+        pack_cost_rub=210,
+        min_buy_price_rub=100,
+        max_buy_price_rub=110,
+        next_floor_after_pack_rub=180,
+        gap_percent=63.64,
+        gross_resale_rub=360,
+        net_resale_rub=306,
+        estimated_profit_rub=96,
+        estimated_roi_percent=45.71,
+        capital_required_rub=210,
+        alert_level="good",
+        market_confidence="high",
+        pack_confidence="high",
+        sample_size=3,
+    )
+    pack_items = [
+        CandidatePackItem(
+            pack_id=pack.pack_id,
+            listing_id="listing_0",
+            item_id="i0",
+            buy_price_rub=100,
+            position_in_pack=1,
+            solo_alert_level="skip",
+        ),
+        CandidatePackItem(
+            pack_id=pack.pack_id,
+            listing_id="listing_1",
+            item_id="i0",
+            buy_price_rub=110,
+            position_in_pack=2,
+            solo_alert_level="skip",
+        ),
+    ]
+
+    saved = repo.save_item_scan_success(
+        run_id,
+        "i0",
+        listings,
+        [],
+        packs=[pack],
+        pack_items=pack_items,
+        item_result={"status": "success", "exact_cards": 3},
+    )
+
+    packs = repo.list_candidate_packs()
+    items = repo.list_candidate_pack_items(pack.pack_id)
+    unsent = repo.list_unsent_alert_packs()
+    assert saved["candidates_saved"] == 0
+    assert len(packs) == 1
+    assert packs[0]["pack_cost_rub"] == 210
+    assert packs[0]["capital_required_rub"] == 210
+    assert len(items) == 2
+    assert all(row["candidate_id"] is None for row in items)
+    assert [row["pack_id"] for row in unsent] == [pack.pack_id]
+
+    repo.save_candidate_packs("i0", [], [])
+
+    assert repo.list_candidate_packs() == []
+    inactive = repo.list_candidate_packs(active_only=False)
+    assert len(inactive) == 1
+    assert inactive[0]["is_active"] == 0
+
+
+def test_substitute_context_reports_stale_metadata(tmp_path):
+    repo = Repository(tmp_path / "test.sqlite3")
+    old_scanned = (utc_now() - timedelta(days=2)).replace(microsecond=0).isoformat()
+    repo.save_collection(Collection(id="c1", name="Collection"))
+    repo.save_item(
+        ItemDefinition(
+            id="target",
+            collection_id="c1",
+            market_hash_name="Target",
+            rarity="Covert",
+            exterior="Factory New",
+        )
+    )
+    repo.save_item(
+        ItemDefinition(
+            id="sub",
+            collection_id="c1",
+            market_hash_name="Substitute",
+            rarity="Covert",
+            exterior="Factory New",
+            last_scanned_at=old_scanned,
+        )
+    )
+    repo.save_listing(
+        MarketListing(
+            id="sub_listing",
+            item_definition_id="sub",
+            rule_id=None,
+            skin_name="Substitute",
+            buy_price_rub=1000,
+            float_value=0.01,
+            first_seen_at=old_scanned,
+            last_seen_at=old_scanned,
+        )
+    )
+
+    context = repo.substitute_price_context(
+        repo.get_item("target"),
+        target_float_max=0.015,
+        premium_multiplier=1.1,
+        min_sample=1,
+        stale_after_seconds=60,
+    )
+
+    assert context["floor_rub"] == 1000
+    assert context["sample_size"] == 1
+    assert context["item_count"] == 1
+    assert context["cap_rub"] == 1100
+    assert context["stale"] is True
+    assert context["last_scanned_at"]
+    assert any("stale" in reason for reason in context["reasons"])

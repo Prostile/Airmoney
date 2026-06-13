@@ -578,6 +578,7 @@ class CraftContextSettings:
     same_collection_same_rarity: bool = True
     target_float_max: float = 0.015
     min_substitute_sample: int = 3
+    substitute_stale_after_seconds: int = 86400
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "CraftContextSettings":
@@ -589,6 +590,7 @@ class CraftContextSettings:
             same_collection_same_rarity=to_bool(raw.get("same_collection_same_rarity", True)),
             target_float_max=max(0.0, _safe_float(raw.get("target_float_max"), 0.015)),
             min_substitute_sample=max(1, _safe_int(raw.get("min_substitute_sample"), 3)),
+            substitute_stale_after_seconds=max(1, _safe_int(raw.get("substitute_stale_after_seconds"), 86400)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -889,6 +891,8 @@ class Candidate:
     market_confidence: str = ""
     liquidity_score: float | None = None
     requires_sweep: bool = False
+    solo_requires_sweep: bool = False
+    belongs_to_pack: bool = False
     manual_review_required: bool = False
     pack_id: str = ""
     pack_size: int = 0
@@ -897,9 +901,70 @@ class Candidate:
     capital_required_rub: float | None = None
     substitute_floor_rub: float | None = None
     substitute_cap_rub: float | None = None
+    substitute_sample_size: int | None = None
+    substitute_last_scanned_at: str = ""
+    substitute_stale: bool | None = None
     raw_anomaly_score: float | None = None
     risk_adjusted_score: float | None = None
     parsed_at: str = ""
     status: str = "new"
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
+
+
+@dataclass
+class CandidatePack:
+    pack_id: str
+    item_id: str
+    collection_id: str | None
+    market_hash_name: str
+    display_name: str | None
+    listing_ids: list[str]
+    pack_size: int
+    pack_cost_rub: float
+    min_buy_price_rub: float | None = None
+    max_buy_price_rub: float | None = None
+    min_float: float | None = None
+    max_float: float | None = None
+    next_floor_after_pack_rub: float | None = None
+    gap_percent: float | None = None
+    gross_resale_rub: float | None = None
+    net_resale_rub: float | None = None
+    estimated_profit_rub: float | None = None
+    estimated_roi_percent: float | None = None
+    capital_required_rub: float = 0.0
+    capital_status: str = "ok"
+    market_confidence: str = ""
+    pack_confidence: str = ""
+    requires_sweep: bool = True
+    manual_review_required: bool = False
+    alert_level: str = "watch"
+    sample_size: int = 0
+    neighbor_count: int | None = None
+    substitute_floor_rub: float | None = None
+    substitute_cap_rub: float | None = None
+    substitute_sample_size: int | None = None
+    substitute_last_scanned_at: str = ""
+    substitute_stale: bool | None = None
+    reasons: list[str] = field(default_factory=list)
+    is_active: bool = True
+    created_at: str = field(default_factory=utc_now_iso)
+    updated_at: str = field(default_factory=utc_now_iso)
+
+
+@dataclass
+class CandidatePackItem:
+    pack_id: str
+    listing_id: str
+    item_id: str
+    buy_price_rub: float
+    position_in_pack: int
+    candidate_id: str | None = None
+    wear_rating: float | None = None
+    pattern_template: int | None = None
+    solo_exit_price_rub: float | None = None
+    solo_net_profit_rub: float | None = None
+    solo_roi_percent: float | None = None
+    solo_alert_level: str = "skip"
+    solo_is_actionable: bool = False
+    created_at: str = field(default_factory=utc_now_iso)

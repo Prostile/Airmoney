@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import csv
 import io
+import json
 import secrets
 import urllib.parse
 from contextlib import asynccontextmanager
@@ -436,6 +437,11 @@ def create_app(repo: Repository | None = None) -> FastAPI:
             "craft_context_min_substitute_sample",
             craft_context.min_substitute_sample,
         )
+        craft_context.substitute_stale_after_seconds = _int(
+            form,
+            "craft_context_substitute_stale_after_seconds",
+            craft_context.substitute_stale_after_seconds,
+        )
         settings.set_craft_context_settings(craft_context)
 
         telegram_alert = current_settings.telegram_alert_settings
@@ -805,6 +811,60 @@ def create_app(repo: Repository | None = None) -> FastAPI:
             },
         )
 
+    @app.get("/packs", response_class=HTMLResponse)
+    def packs_page(
+        request: Request,
+        level: str | None = None,
+        item_id: str | None = None,
+        active_only: bool = True,
+        page: int = 1,
+        _: str = Depends(require_auth),
+    ):
+        packs, pagination = _paginate_rows(
+            repository.list_candidate_packs(
+                active_only=active_only,
+                level=level,
+                item_id=item_id,
+                limit=100000,
+            ),
+            page,
+            request,
+        )
+        return templates.TemplateResponse(
+            request,
+            "packs.html",
+            {
+                "request": request,
+                "active": "packs",
+                "packs": packs,
+                "items": repository.list_items(),
+                "pagination": pagination,
+                "filters": dict(request.query_params),
+                "message": request.query_params.get("message", ""),
+            },
+        )
+
+    @app.get("/packs/{pack_id}", response_class=HTMLResponse)
+    def pack_details_page(
+        request: Request,
+        pack_id: str,
+        _: str = Depends(require_auth),
+    ):
+        pack = repository.get_candidate_pack(pack_id)
+        if not pack:
+            raise HTTPException(status_code=404, detail="Pack not found")
+        return templates.TemplateResponse(
+            request,
+            "pack_detail.html",
+            {
+                "request": request,
+                "active": "packs",
+                "pack": pack,
+                "items": repository.list_candidate_pack_items(pack_id),
+                "reasons": _split_reasons_json(pack.get("reasons_json") or "[]"),
+            },
+        )
+
     @app.post("/candidates/{candidate_id}/status")
     async def update_candidate(request: Request, candidate_id: str, _: str = Depends(require_auth)) -> RedirectResponse:
         form = await _form(request)
@@ -1023,6 +1083,16 @@ def _extract_exterior(market_hash_name: str) -> str:
 
 def _split_reasons(value: str) -> list[str]:
     return [part.strip() for part in str(value or "").split(";") if part.strip()]
+
+
+def _split_reasons_json(value: str) -> list[str]:
+    try:
+        parsed = json.loads(value or "[]")
+    except Exception:
+        parsed = []
+    if isinstance(parsed, list):
+        return [str(part).strip() for part in parsed if str(part).strip()]
+    return []
 
 
 def _paginate_rows(

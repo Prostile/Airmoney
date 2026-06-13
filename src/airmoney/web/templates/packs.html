@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+{% block title %}Airmoney - Packs{% endblock %}
+{% block content %}
+<section class="page-title-row">
+  <div>
+    <div class="page-pretitle">Pack strategy</div>
+    <h1 class="page-title">Pack candidates</h1>
+    <div class="text-secondary mt-1">Sweep scenarios saved separately from solo candidates.</div>
+  </div>
+</section>
+
+<section class="card filter-card mb-4">
+  <form method="get" action="/packs">
+    <div class="card-body">
+      <div class="row align-items-end">
+        <div class="col-12 col-md-3">
+          <label class="form-label">Level</label>
+          <select class="form-select" name="level">
+            <option value="">Any</option>
+            {% for level in ["critical", "good", "watch", "skip"] %}
+            <option value="{{ level }}" {% if filters.level == level %}selected{% endif %}>{{ level }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-5">
+          <label class="form-label">Item</label>
+          <select class="form-select" name="item_id">
+            <option value="">Any</option>
+            {% for item in items %}
+            <option value="{{ item.id }}" {% if filters.item_id == item.id %}selected{% endif %}>{{ item.display_name }} {{ item.exterior }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-2">
+          <label class="form-check">
+            <input type="hidden" name="active_only" value="false">
+            <input class="form-check-input" type="checkbox" name="active_only" value="true" {% if filters.active_only != "false" %}checked{% endif %}>
+            <span class="form-check-label">Active only</span>
+          </label>
+        </div>
+        <div class="col-12 col-md-auto">
+          <button class="btn btn-primary" type="submit"><i class="ti ti-filter"></i>Apply</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <div class="table-responsive table-responsive-wide">
+    <table class="table table-vcenter card-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Level</th>
+          <th>Size</th>
+          <th>Buy range</th>
+          <th>Float range</th>
+          <th>Cost</th>
+          <th>Next floor</th>
+          <th>Gap</th>
+          <th>Pack profit</th>
+          <th>ROI</th>
+          <th>Capital</th>
+          <th>Confidence</th>
+          <th>Manual</th>
+          <th>Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pack in packs %}
+        <tr>
+          <td class="fw-semibold">{{ pack.market_hash_name }}</td>
+          <td><span class="badge badge-level-{{ pack.alert_level }}">{{ pack.alert_level }}</span></td>
+          <td>{{ pack.pack_size }}</td>
+          <td>{{ "%.2f"|format(pack.min_buy_price_rub) if pack.min_buy_price_rub is not none else "-" }}-{{ "%.2f"|format(pack.max_buy_price_rub) if pack.max_buy_price_rub is not none else "-" }}</td>
+          <td>{{ "%.4f"|format(pack.min_float) if pack.min_float is not none else "-" }}-{{ "%.4f"|format(pack.max_float) if pack.max_float is not none else "-" }}</td>
+          <td>{{ "%.2f"|format(pack.pack_cost_rub) }}</td>
+          <td>{{ "%.2f"|format(pack.next_floor_after_pack_rub) if pack.next_floor_after_pack_rub is not none else "-" }}</td>
+          <td>{{ "%.1f"|format(pack.gap_percent) ~ "%" if pack.gap_percent is not none else "-" }}</td>
+          <td class="{{ 'profit-positive' if pack.estimated_profit_rub and pack.estimated_profit_rub > 0 else 'profit-negative' }}">{{ "%.2f"|format(pack.estimated_profit_rub) if pack.estimated_profit_rub is not none else "-" }}</td>
+          <td>{{ "%.2f"|format(pack.estimated_roi_percent) ~ "%" if pack.estimated_roi_percent is not none else "-" }}</td>
+          <td>{{ pack.capital_status or "-" }}<div class="text-secondary small">{{ "%.2f"|format(pack.capital_required_rub) if pack.capital_required_rub is not none else "-" }}</div></td>
+          <td>{{ pack.market_confidence or pack.pack_confidence or "-" }}</td>
+          <td>{{ "yes" if pack.manual_review_required else "no" }}</td>
+          <td class="text-secondary">{{ pack.updated_at }}</td>
+          <td><a class="btn btn-outline-secondary btn-sm" href="/packs/{{ pack.pack_id }}"><i class="ti ti-list-details"></i>Details</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="15" class="text-secondary">No pack candidates yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "components/pagination.html" %}
+</section>
+{% endblock %}

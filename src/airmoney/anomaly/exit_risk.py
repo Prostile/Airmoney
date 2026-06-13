@@ -4,7 +4,12 @@ from dataclasses import dataclass, field
 from statistics import median
 
 from airmoney.anomaly.models import ParsedListing
-from airmoney.config.models import CapitalSettings, MarketRiskSettings, PackDetectionSettings
+from airmoney.config.models import (
+    AnomalyThresholdSettings,
+    CapitalSettings,
+    MarketRiskSettings,
+    PackDetectionSettings,
+)
 
 
 LEVEL_ORDER = {"skip": 0, "watch": 1, "good": 2, "critical": 3}
@@ -16,7 +21,11 @@ class SubstituteContext:
     floor_rub: float | None = None
     median_rub: float | None = None
     sample_size: int = 0
+    item_count: int = 0
     cap_rub: float | None = None
+    last_scanned_at: str = ""
+    stale: bool = True
+    reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -32,8 +41,11 @@ class PackCandidate:
     max_float: float | None
     next_floor_after_pack_rub: float
     gap_percent: float
+    gross_resale_rub: float
+    net_resale_rub: float
     estimated_net_profit_rub: float
     estimated_roi_percent: float
+    capital_status: str
     requires_sweep: bool
     confidence: str
     reasons: list[str] = field(default_factory=list)
@@ -54,6 +66,9 @@ class ExitPriceResult:
     capital_required_rub: float | None
     substitute_floor_rub: float | None
     substitute_cap_rub: float | None
+    substitute_sample_size: int | None = None
+    substitute_last_scanned_at: str = ""
+    substitute_stale: bool | None = None
     pack_id: str = ""
     pack_size: int = 0
     pack_cost_rub: float | None = None
@@ -85,7 +100,8 @@ def detect_price_packs(
             continue
         pack_cost = round(sum(listing.price_rub for listing in pack), 2)
         fee_multiplier = max(0.0, 1 - fee_percent / 100)
-        net_resale = right * len(pack) * fee_multiplier
+        gross_resale = right * len(pack)
+        net_resale = gross_resale * fee_multiplier
         profit = round(net_resale - pack_cost, 2)
         roi = round(profit / pack_cost * 100, 2) if pack_cost > 0 else 0.0
         floats = [listing.wear_rating for listing in pack if listing.wear_rating is not None]
@@ -103,8 +119,11 @@ def detect_price_packs(
                 max_float=max(floats) if floats else None,
                 next_floor_after_pack_rub=right,
                 gap_percent=gap_percent,
+                gross_resale_rub=round(gross_resale, 2),
+                net_resale_rub=round(net_resale, 2),
                 estimated_net_profit_rub=profit,
                 estimated_roi_percent=roi,
+                capital_status="ok",
                 requires_sweep=True,
                 confidence="medium",
                 reasons=[f"price pack before {gap_percent:.1f}% gap"],
@@ -133,7 +152,11 @@ def estimate_exit_prices(
     packs = detect_price_packs(values, pack_settings, fee_percent=fee_percent)
     pack = _pack_for_candidate(candidate, packs)
     substitute_floor = substitute_context.floor_rub if substitute_context else None
-    substitute_cap = substitute_context.cap_rub if substitute_context else None
+    substitute_cap = (
+        substitute_context.cap_rub
+        if substitute_context and not substitute_context.stale
+        else None
+    )
     solo_exit = nearest
     if candidate_index is not None and candidate_index > 0 and values:
         solo_exit = min(values[0].price_rub, nearest) if nearest is not None else values[0].price_rub
@@ -149,6 +172,10 @@ def estimate_exit_prices(
         reasons.append(f"solo exit {solo_exit:.2f}")
     if substitute_cap is not None:
         reasons.append(f"substitute cap {substitute_cap:.2f}")
+    if substitute_context and substitute_context.stale:
+        reasons.append("substitute context stale")
+    if substitute_context:
+        reasons.extend(substitute_context.reasons)
     requires_sweep = pack is not None and candidate_index is not None and candidate_index > 0
     capital_required = candidate.price_rub
     pack_id = ""
@@ -193,6 +220,9 @@ def estimate_exit_prices(
         capital_required_rub=round(capital_required, 2) if capital_required is not None else None,
         substitute_floor_rub=substitute_floor,
         substitute_cap_rub=substitute_cap,
+        substitute_sample_size=substitute_context.sample_size if substitute_context else None,
+        substitute_last_scanned_at=substitute_context.last_scanned_at if substitute_context else "",
+        substitute_stale=substitute_context.stale if substitute_context else None,
         pack_id=pack_id,
         pack_size=pack_size,
         pack_cost_rub=pack_cost,
@@ -249,6 +279,44 @@ def apply_capital_caps(
     if not settings.enabled or not exit_result.manual_review_required:
         return alert_level
     return min_level(alert_level, "watch")
+
+
+def pack_capital_status(pack_size: int, pack_cost_rub: float, settings: CapitalSettings) -> tuple[str, bool]:
+    if not settings.enabled:
+        return "ok", False
+    if pack_cost_rub > settings.max_bundle_cost_rub:
+        return "over_bundle_limit", True
+    if pack_size > settings.max_units_per_item:
+        return "over_units_limit", True
+    return "ok", False
+
+
+def resolve_pack_alert_level(
+    pack_profit: float | None,
+    pack_roi: float | None,
+    gap_percent: float | None,
+    confidence: str,
+    capital_status: str,
+    manual_review_required: bool,
+    sample_size: int,
+    thresholds: AnomalyThresholdSettings,
+    market_settings: MarketRiskSettings,
+) -> str:
+    if pack_profit is None or pack_profit <= 0:
+        return "skip"
+    if pack_roi is None or pack_roi < thresholds.min_roi_percent:
+        return "watch"
+    if pack_profit < thresholds.min_net_profit_rub:
+        return "watch"
+    if gap_percent is None or gap_percent <= 0:
+        return "watch"
+    if manual_review_required or capital_status != "ok":
+        return "watch"
+    if confidence in {"high", "medium"} and sample_size >= market_settings.min_sample_for_critical:
+        return "critical"
+    if confidence != "very_low" and sample_size >= market_settings.min_sample_for_good:
+        return "good"
+    return "watch"
 
 
 def min_level(left: str, right: str) -> str:

@@ -15,6 +15,8 @@ from typing import Any
 from airmoney.anomaly.history import MarketSnapshot, ewma
 from airmoney.config.models import (
     Candidate,
+    CandidatePack,
+    CandidatePackItem,
     Collection,
     ItemDefinition,
     MarketListing,
@@ -822,7 +824,12 @@ class Repository:
         params = asdict(candidate)
         params["exact_item_match"] = int(candidate.exact_item_match)
         params["requires_sweep"] = int(candidate.requires_sweep)
+        params["solo_requires_sweep"] = int(candidate.solo_requires_sweep)
+        params["belongs_to_pack"] = int(candidate.belongs_to_pack)
         params["manual_review_required"] = int(candidate.manual_review_required)
+        params["substitute_stale"] = (
+            None if candidate.substitute_stale is None else int(candidate.substitute_stale)
+        )
         columns = [
             "id",
             "listing_id",
@@ -860,6 +867,8 @@ class Repository:
             "market_confidence",
             "liquidity_score",
             "requires_sweep",
+            "solo_requires_sweep",
+            "belongs_to_pack",
             "manual_review_required",
             "pack_id",
             "pack_size",
@@ -868,6 +877,9 @@ class Repository:
             "capital_required_rub",
             "substitute_floor_rub",
             "substitute_cap_rub",
+            "substitute_sample_size",
+            "substitute_last_scanned_at",
+            "substitute_stale",
             "raw_anomaly_score",
             "risk_adjusted_score",
             "parsed_at",
@@ -895,18 +907,126 @@ class Repository:
             params,
         )
 
+    def _upsert_candidate_pack_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        pack: CandidatePack,
+        now: str | None = None,
+    ) -> None:
+        pack.updated_at = now or utc_now_iso()
+        existing = connection.execute(
+            "SELECT created_at FROM candidate_packs WHERE pack_id = ?",
+            (pack.pack_id,),
+        ).fetchone()
+        if existing:
+            pack.created_at = existing["created_at"]
+        params = asdict(pack)
+        params["listing_ids"] = json.dumps(pack.listing_ids, ensure_ascii=False)
+        params["reasons_json"] = json.dumps(pack.reasons, ensure_ascii=False)
+        params["requires_sweep"] = int(pack.requires_sweep)
+        params["manual_review_required"] = int(pack.manual_review_required)
+        params["is_active"] = int(pack.is_active)
+        params["substitute_stale"] = None if pack.substitute_stale is None else int(pack.substitute_stale)
+        columns = [
+            "pack_id",
+            "item_id",
+            "collection_id",
+            "market_hash_name",
+            "display_name",
+            "pack_size",
+            "pack_cost_rub",
+            "min_buy_price_rub",
+            "max_buy_price_rub",
+            "min_float",
+            "max_float",
+            "next_floor_after_pack_rub",
+            "gap_percent",
+            "gross_resale_rub",
+            "net_resale_rub",
+            "estimated_profit_rub",
+            "estimated_roi_percent",
+            "capital_required_rub",
+            "capital_status",
+            "market_confidence",
+            "pack_confidence",
+            "requires_sweep",
+            "manual_review_required",
+            "alert_level",
+            "sample_size",
+            "neighbor_count",
+            "substitute_floor_rub",
+            "substitute_cap_rub",
+            "substitute_sample_size",
+            "substitute_last_scanned_at",
+            "substitute_stale",
+            "reasons_json",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        placeholders = ", ".join(f":{column}" for column in columns)
+        assignments = ",\n                    ".join(
+            f"{column} = excluded.{column}"
+            for column in columns
+            if column not in {"pack_id", "created_at"}
+        )
+        connection.execute(
+            f"""
+            INSERT INTO candidate_packs (
+                {", ".join(columns)}
+            )
+            VALUES (
+                {placeholders}
+            )
+            ON CONFLICT(pack_id) DO UPDATE SET
+                    {assignments}
+            """,
+            params,
+        )
+
+    def _insert_candidate_pack_item_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        item: CandidatePackItem,
+        now: str | None = None,
+    ) -> None:
+        params = asdict(item)
+        params["created_at"] = now or item.created_at or utc_now_iso()
+        params["solo_is_actionable"] = int(item.solo_is_actionable)
+        connection.execute(
+            """
+            INSERT INTO candidate_pack_items (
+                pack_id, candidate_id, listing_id, item_id, buy_price_rub,
+                wear_rating, pattern_template, solo_exit_price_rub,
+                solo_net_profit_rub, solo_roi_percent, solo_alert_level,
+                solo_is_actionable, position_in_pack, created_at
+            )
+            VALUES (
+                :pack_id, :candidate_id, :listing_id, :item_id, :buy_price_rub,
+                :wear_rating, :pattern_template, :solo_exit_price_rub,
+                :solo_net_profit_rub, :solo_roi_percent, :solo_alert_level,
+                :solo_is_actionable, :position_in_pack, :created_at
+            )
+            """,
+            params,
+        )
+
     def save_item_scan_success(
         self,
         run_id: str,
         item_id: str,
         listings: list[MarketListing],
         candidates: list[Candidate],
+        packs: list[CandidatePack] | None = None,
+        pack_items: list[CandidatePackItem] | None = None,
         snapshots: list[MarketSnapshot] | None = None,
         snapshot_alpha: float = 0.25,
         item_result: dict[str, Any] | None = None,
     ) -> dict[str, int]:
         now = utc_now_iso()
         snapshots = snapshots or []
+        packs = packs or []
+        pack_items = pack_items or []
         item_result = item_result or {}
         with self.connection() as connection:
             connection.execute(
@@ -916,6 +1036,10 @@ class Repository:
                 WHERE item_definition_id = ?
                 """,
                 (item_id,),
+            )
+            connection.execute(
+                "UPDATE candidate_packs SET is_active = 0, updated_at = ? WHERE item_id = ?",
+                (now, item_id),
             )
             for listing in listings:
                 connection.execute(
@@ -957,6 +1081,14 @@ class Repository:
                 )
             for candidate in candidates:
                 self._upsert_candidate_in_connection(connection, candidate, now=now)
+            for pack in packs:
+                self._upsert_candidate_pack_in_connection(connection, pack, now=now)
+            if pack_items:
+                pack_ids = sorted({item.pack_id for item in pack_items})
+                for pack_id in pack_ids:
+                    connection.execute("DELETE FROM candidate_pack_items WHERE pack_id = ?", (pack_id,))
+                for item in pack_items:
+                    self._insert_candidate_pack_item_in_connection(connection, item, now=now)
             current_listing_ids = {listing.id for listing in listings}
             analyzed_listing_ids = {candidate.listing_id for candidate in candidates}
             stale_candidate_listing_ids = sorted(current_listing_ids - analyzed_listing_ids)
@@ -1011,6 +1143,27 @@ class Repository:
                 (now, item_id),
             )
             self._insert_scan_item_result(connection, run_id, item_id, item_result or {}, now)
+
+    def save_candidate_packs(
+        self,
+        item_id: str,
+        packs: list[CandidatePack],
+        pack_items: list[CandidatePackItem],
+    ) -> None:
+        now = utc_now_iso()
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE candidate_packs SET is_active = 0, updated_at = ? WHERE item_id = ?",
+                (now, item_id),
+            )
+            for pack in packs:
+                self._upsert_candidate_pack_in_connection(connection, pack, now=now)
+            if pack_items:
+                pack_ids = sorted({item.pack_id for item in pack_items})
+                for pack_id in pack_ids:
+                    connection.execute("DELETE FROM candidate_pack_items WHERE pack_id = ?", (pack_id,))
+                for item in pack_items:
+                    self._insert_candidate_pack_item_in_connection(connection, item, now=now)
 
     def _insert_scan_item_result(
         self,
@@ -1192,6 +1345,70 @@ class Repository:
             ).fetchone()
         return row_to_dict(row)
 
+    def list_candidate_packs(
+        self,
+        active_only: bool = True,
+        level: str | None = None,
+        item_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if active_only:
+            clauses.append("p.is_active = 1")
+        if level:
+            clauses.append("p.alert_level = ?")
+            params.append(level)
+        if item_id:
+            clauses.append("p.item_id = ?")
+            params.append(item_id)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(limit)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT p.*, i.display_name AS item_display_name, c.name AS collection_name
+                FROM candidate_packs p
+                LEFT JOIN items i ON i.id = p.item_id
+                LEFT JOIN collections c ON c.id = p.collection_id
+                {where}
+                ORDER BY CASE p.alert_level
+                    WHEN 'critical' THEN 1 WHEN 'good' THEN 2 WHEN 'watch' THEN 3 ELSE 4 END,
+                    p.updated_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_candidate_pack(self, pack_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT p.*, i.display_name AS item_display_name, c.name AS collection_name
+                FROM candidate_packs p
+                LEFT JOIN items i ON i.id = p.item_id
+                LEFT JOIN collections c ON c.id = p.collection_id
+                WHERE p.pack_id = ?
+                """,
+                (pack_id,),
+            ).fetchone()
+        return row_to_dict(row)
+
+    def list_candidate_pack_items(self, pack_id: str) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT pi.*, ml.listing_url, ml.search_url, ml.skin_name, ml.raw_text
+                FROM candidate_pack_items pi
+                JOIN market_listings ml ON ml.id = pi.listing_id
+                WHERE pi.pack_id = ?
+                ORDER BY pi.position_in_pack
+                """,
+                (pack_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def update_candidate_statuses(self, candidate_ids: list[str], status: str) -> int:
         if not candidate_ids:
             return 0
@@ -1278,6 +1495,7 @@ class Repository:
         premium_multiplier: float,
         min_sample: int = 3,
         same_collection_same_rarity: bool = True,
+        stale_after_seconds: int = 86400,
     ) -> dict[str, Any]:
         clauses = [
             "ml.is_active = 1",
@@ -1302,7 +1520,7 @@ class Repository:
         with self.connection() as connection:
             rows = connection.execute(
                 f"""
-                SELECT ml.buy_price_rub
+                SELECT ml.buy_price_rub, i.id AS item_id, i.last_scanned_at
                 FROM market_listings ml
                 JOIN items i ON i.id = ml.item_definition_id
                 WHERE {' AND '.join(clauses)}
@@ -1312,15 +1530,42 @@ class Repository:
             ).fetchall()
         prices = [float(row["buy_price_rub"]) for row in rows if row["buy_price_rub"] is not None]
         sample_size = len(prices)
+        item_ids = {str(row["item_id"]) for row in rows if row["item_id"]}
+        scanned_values = [parse_dt(row["last_scanned_at"]) for row in rows if row["last_scanned_at"]]
+        scanned_values = [value for value in scanned_values if value is not None]
+        last_scanned_at_dt = max(scanned_values) if scanned_values else None
+        stale = True
+        reasons: list[str] = []
+        if last_scanned_at_dt is None:
+            reasons.append("substitute context has no scan timestamp")
+        else:
+            stale = (utc_now() - last_scanned_at_dt).total_seconds() > max(1, stale_after_seconds)
+            if stale:
+                reasons.append("substitute context stale")
         if not prices:
-            return {"floor_rub": None, "median_rub": None, "sample_size": 0, "cap_rub": None}
+            return {
+                "floor_rub": None,
+                "median_rub": None,
+                "sample_size": 0,
+                "item_count": 0,
+                "cap_rub": None,
+                "last_scanned_at": "",
+                "stale": True,
+                "reasons": ["no substitute listings"],
+            }
         floor = min(prices)
+        if sample_size < min_sample:
+            reasons.append("substitute sample below minimum")
         cap = round(floor * premium_multiplier, 2) if sample_size >= min_sample else None
         return {
             "floor_rub": round(floor, 2),
             "median_rub": round(float(median(prices)), 2),
             "sample_size": sample_size,
+            "item_count": len(item_ids),
             "cap_rub": cap,
+            "last_scanned_at": last_scanned_at_dt.replace(microsecond=0).isoformat() if last_scanned_at_dt else "",
+            "stale": stale,
+            "reasons": reasons,
         }
 
     def list_market_snapshots(self, item_id: str, limit: int = 30) -> list[dict[str, Any]]:
@@ -1532,6 +1777,38 @@ class Repository:
                 """,
                 (new_id("tg"), candidate_id, utc_now_iso(), status, error),
             )
+
+    def log_telegram_pack_alert(self, pack_id: str, status: str, error: str = "") -> None:
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO telegram_pack_alerts (id, pack_id, sent_at, status, error)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (new_id("tgp"), pack_id, utc_now_iso(), status, error),
+            )
+
+    def list_unsent_alert_packs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT p.*, i.display_name AS item_display_name, col.name AS collection_name
+                FROM candidate_packs p
+                JOIN items i ON i.id = p.item_id
+                JOIN collections col ON col.id = i.collection_id
+                LEFT JOIN telegram_pack_alerts tpa
+                    ON tpa.pack_id = p.pack_id AND tpa.status = 'sent'
+                WHERE p.is_active = 1
+                  AND p.alert_level IN ('critical', 'good', 'watch')
+                  AND tpa.id IS NULL
+                ORDER BY CASE p.alert_level
+                    WHEN 'critical' THEN 1 WHEN 'good' THEN 2 WHEN 'watch' THEN 3 ELSE 4 END,
+                    p.updated_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def list_unsent_alert_candidates(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connection() as connection:

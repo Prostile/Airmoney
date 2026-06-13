@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+{% block title %}Airmoney - Pack{% endblock %}
+{% block content %}
+<section class="page-title-row">
+  <div>
+    <div class="page-pretitle">Pack strategy</div>
+    <h1 class="page-title">{{ pack.market_hash_name }}</h1>
+    <div class="text-secondary mt-1">{{ pack.collection_name or "" }} / {{ pack.pack_id }}</div>
+  </div>
+  <div class="toolbar">
+    <a class="btn btn-outline-secondary" href="/packs"><i class="ti ti-arrow-left"></i>Back</a>
+  </div>
+</section>
+
+<div class="row row-cards">
+  <div class="col-12 col-xl-5">
+    <section class="card h-100">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-package me-2"></i>Pack economics</h2></div>
+      <div class="card-body">
+        <table class="table table-sm">
+          <tbody>
+            <tr><th>Alert level</th><td>{{ pack.alert_level }}</td><th>Requires sweep</th><td>{{ "yes" if pack.requires_sweep else "no" }}</td></tr>
+            <tr><th>Pack size</th><td>{{ pack.pack_size }}</td><th>Capital status</th><td>{{ pack.capital_status or "-" }}</td></tr>
+            <tr><th>Buy range</th><td>{{ "%.2f"|format(pack.min_buy_price_rub) if pack.min_buy_price_rub is not none else "-" }}-{{ "%.2f"|format(pack.max_buy_price_rub) if pack.max_buy_price_rub is not none else "-" }}</td><th>Float range</th><td>{{ "%.4f"|format(pack.min_float) if pack.min_float is not none else "-" }}-{{ "%.4f"|format(pack.max_float) if pack.max_float is not none else "-" }}</td></tr>
+            <tr><th>Pack cost</th><td>{{ "%.2f"|format(pack.pack_cost_rub) }}</td><th>Capital required</th><td>{{ "%.2f"|format(pack.capital_required_rub) if pack.capital_required_rub is not none else "-" }}</td></tr>
+            <tr><th>Next floor</th><td>{{ "%.2f"|format(pack.next_floor_after_pack_rub) if pack.next_floor_after_pack_rub is not none else "-" }}</td><th>Gap</th><td>{{ "%.1f"|format(pack.gap_percent) ~ "%" if pack.gap_percent is not none else "-" }}</td></tr>
+            <tr><th>Gross resale</th><td>{{ "%.2f"|format(pack.gross_resale_rub) if pack.gross_resale_rub is not none else "-" }}</td><th>Net resale</th><td>{{ "%.2f"|format(pack.net_resale_rub) if pack.net_resale_rub is not none else "-" }}</td></tr>
+            <tr><th>Pack profit</th><td>{{ "%.2f"|format(pack.estimated_profit_rub) if pack.estimated_profit_rub is not none else "-" }}</td><th>Pack ROI</th><td>{{ "%.2f"|format(pack.estimated_roi_percent) ~ "%" if pack.estimated_roi_percent is not none else "-" }}</td></tr>
+            <tr><th>Confidence</th><td>{{ pack.market_confidence or pack.pack_confidence or "-" }}</td><th>Manual review</th><td>{{ "yes" if pack.manual_review_required else "no" }}</td></tr>
+            <tr><th>Substitute cap</th><td>{{ "%.2f"|format(pack.substitute_cap_rub) if pack.substitute_cap_rub is not none else "-" }}</td><th>Sub sample</th><td>{{ pack.substitute_sample_size or 0 }}{% if pack.substitute_stale %} / stale{% endif %}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-7">
+    <section class="card h-100">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-list me-2"></i>Pack lots</h2></div>
+      <div class="table-responsive">
+        <table class="table table-sm card-table">
+          <thead><tr><th>#</th><th>Price</th><th>Float</th><th>Pattern</th><th>Solo exit</th><th>Solo profit</th><th>Solo ROI</th><th>Solo level</th><th>Link</th></tr></thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>{{ item.position_in_pack }}</td>
+              <td>{{ "%.2f"|format(item.buy_price_rub) }}</td>
+              <td>{{ "%.6f"|format(item.wear_rating) if item.wear_rating is not none else "-" }}</td>
+              <td>{{ item.pattern_template if item.pattern_template is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(item.solo_exit_price_rub) if item.solo_exit_price_rub is not none else "-" }}</td>
+              <td class="{{ 'profit-positive' if item.solo_net_profit_rub and item.solo_net_profit_rub > 0 else 'profit-negative' }}">{{ "%.2f"|format(item.solo_net_profit_rub) if item.solo_net_profit_rub is not none else "-" }}</td>
+              <td>{{ "%.2f"|format(item.solo_roi_percent) ~ "%" if item.solo_roi_percent is not none else "-" }}</td>
+              <td>{{ item.solo_alert_level }}</td>
+              <td>{% if item.listing_url %}<a target="_blank" href="{{ item.listing_url }}">Steam</a>{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <div class="col-12">
+    <section class="card">
+      <div class="card-header"><h2 class="card-title"><i class="ti ti-list-check me-2"></i>Reasons</h2></div>
+      <div class="card-body">
+        {% if reasons %}
+        <ul class="mb-0">{% for reason in reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+        {% else %}
+        <div class="text-secondary">No reasons recorded.</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

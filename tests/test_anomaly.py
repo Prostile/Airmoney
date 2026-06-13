@@ -11,12 +11,14 @@ from airmoney.anomaly.baselines import (
 )
 from airmoney.anomaly.matching import is_exact_item_match, passes_item_match
 from airmoney.anomaly.models import ParsedListing
+from airmoney.anomaly.exit_risk import SubstituteContext
 from airmoney.anomaly.history import build_market_snapshots, ewma
 from airmoney.anomaly.scoring import calculate_real_profit, estimate_fair_price, resolve_alert_level
 from airmoney.config.models import AnomalySettings, Collection, ItemDefinition, MarketListing, ParserSettings
 from airmoney.storage.repositories import Repository
 from airmoney.steam.scanner import (
     _evaluate_item_listings,
+    _build_candidate_pack_records,
     _item_result_status,
     _prepare_item_listings,
     _rule_eligible_listing_info,
@@ -269,6 +271,100 @@ def test_tec9_pack_uses_solo_exit_and_does_not_create_many_critical_alerts():
     assert first.pack_cost_rub == 12136
     assert first.pack_floor_after_rub == 6188
     assert sum(1 for result in results if result.alert_level == "critical") <= 1
+
+
+def test_stale_substitute_context_does_not_cap_exit_price():
+    settings = ParserSettings(default_market_fee_percent=13)
+    anomaly = settings.anomaly_settings
+    anomaly.sample.min_listings = 5
+    anomaly.nearest_neighbors.min_neighbors = 4
+    settings.set_anomaly_settings(anomaly)
+    sample = [listing(price, 0.01 + index * 0.001) for index, price in enumerate([1000, 1500, 1700, 1800, 1900])]
+    item = {"enabled": True, "market_hash_name": sample[0].expected_market_hash_name}
+    rule = {"enabled": True}
+
+    stale = analyze_listing(
+        sample[0],
+        sample,
+        item,
+        rule,
+        settings,
+        substitute_context=SubstituteContext(
+            floor_rub=1100,
+            cap_rub=1200,
+            sample_size=4,
+            stale=True,
+            reasons=["substitute context stale"],
+        ),
+    )
+    fresh = analyze_listing(
+        sample[0],
+        sample,
+        item,
+        rule,
+        settings,
+        substitute_context=SubstituteContext(
+            floor_rub=1100,
+            cap_rub=1200,
+            sample_size=4,
+            stale=False,
+        ),
+    )
+
+    assert stale.exit_price_rub == 1500
+    assert stale.substitute_cap_rub is None
+    assert stale.substitute_sample_size == 4
+    assert stale.substitute_stale is True
+    assert any("substitute context stale" in reason for reason in stale.reasons)
+    assert fresh.exit_price_rub == 1200
+    assert fresh.substitute_cap_rub == 1200
+
+
+def test_pack_record_keeps_all_pack_items_even_when_solo_candidates_skip():
+    settings = ParserSettings(default_market_fee_percent=13)
+    anomaly = settings.anomaly_settings
+    anomaly.sample.min_listings = 5
+    anomaly.nearest_neighbors.min_neighbors = 4
+    anomaly.thresholds.min_net_profit_rub = 10000
+    settings.set_anomaly_settings(anomaly)
+    capital = settings.capital_settings
+    capital.max_bundle_cost_rub = 20000
+    capital.max_units_per_item = 10
+    settings.set_capital_settings(capital)
+    item = {
+        "id": "tec9",
+        "collection_id": "col",
+        "market_hash_name": "Souvenir UMP-45 | Mechanism (Factory New)",
+        "display_name": "Tec-9 test",
+        "enabled": True,
+    }
+    listings = [
+        MarketListing(
+            id=f"listing_{index}",
+            item_definition_id="tec9",
+            rule_id="rule_tec9",
+            skin_name="Souvenir UMP-45 | Mechanism (Factory New)",
+            market_hash_name="Souvenir UMP-45 | Mechanism (Factory New)",
+            buy_price_rub=price,
+            float_value=0.011 + index * 0.0001,
+        )
+        for index, price in enumerate([2493, 3205, 3205, 3233, 6188, 6188, 7519, 11563])
+    ]
+
+    candidate_pairs = _evaluate_item_listings(listings, item, {"id": "rule_tec9", "enabled": True}, settings)
+    packs, pack_items = _build_candidate_pack_records(candidate_pairs, item, settings, None, saved_candidate_ids=set())
+
+    assert len(packs) == 1
+    assert packs[0].pack_size == 4
+    assert packs[0].pack_cost_rub == 12136
+    assert packs[0].capital_required_rub == 12136
+    assert packs[0].next_floor_after_pack_rub == 6188
+    assert packs[0].estimated_profit_rub == 9398.24
+    assert packs[0].estimated_roi_percent == 77.44
+    assert packs[0].alert_level == "watch"
+    assert len(pack_items) == 4
+    assert all(item.candidate_id is None for item in pack_items)
+    assert all(item.solo_alert_level == "skip" for item in pack_items)
 
 
 def test_anomaly_disabled_uses_legacy_profit_logic():

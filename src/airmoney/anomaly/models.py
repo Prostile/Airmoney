@@ -58,6 +58,8 @@ class AnomalyResult:
     alert_level: str
     market_confidence: str = ""
     requires_sweep: bool = False
+    solo_requires_sweep: bool = False
+    belongs_to_pack: bool = False
     pack_id: str = ""
     pack_size: int = 0
     pack_cost_rub: float | None = None
@@ -65,6 +67,9 @@ class AnomalyResult:
     capital_required_rub: float | None = None
     substitute_floor_rub: float | None = None
     substitute_cap_rub: float | None = None
+    substitute_sample_size: int | None = None
+    substitute_last_scanned_at: str = ""
+    substitute_stale: bool | None = None
     solo_exit_price_rub: float | None = None
     sweep_exit_price_rub: float | None = None
     exit_price_model: str = ""

@@ -9,12 +9,16 @@ from typing import Any, Callable
 
 from airmoney.anomaly.baselines import assign_float_bucket
 from airmoney.anomaly.candidates import candidate_from_anomaly_result
-from airmoney.anomaly.exit_risk import SubstituteContext
+from airmoney.anomaly.exit_risk import (
+    SubstituteContext,
+    pack_capital_status,
+    resolve_pack_alert_level,
+)
 from airmoney.anomaly.history import build_market_snapshots
 from airmoney.anomaly.matching import passes_item_match
 from airmoney.anomaly.models import parsed_listing_from_market_listing
 from airmoney.anomaly.analyzer import analyze_listings
-from airmoney.config.models import Candidate, MarketListing, ParserSettings
+from airmoney.config.models import Candidate, CandidatePack, CandidatePackItem, MarketListing, ParserSettings
 from airmoney.currency.steam_currency import CurrencyService
 from airmoney.recommendation.engine import evaluate_listing
 from airmoney.storage.repositories import Repository
@@ -604,6 +608,8 @@ def _scan_item_once(
     eligible_info = _rule_eligible_listing_info(item_listings, row, rule)
     rule_eligible_listings = eligible_info["eligible_listings"]
     candidates: list[Candidate] = []
+    pack_records: list[CandidatePack] = []
+    pack_items: list[CandidatePackItem] = []
     if deep_scan_performed and rule_eligible_listings:
         substitute_context = _substitute_context(repository, row, settings)
         all_candidates = _evaluate_item_listings(
@@ -614,11 +620,25 @@ def _scan_item_once(
             historical_baselines=historical_baselines,
             substitute_context=substitute_context,
         )
+        saved_candidate_ids: set[str] = set()
         for _, candidate in all_candidates:
-            if _should_save_candidate(candidate, anomaly_settings):
+            suppress_pack_member = (
+                settings.pack_detection_settings.enabled
+                and settings.pack_detection_settings.alert_as_single_pack
+                and candidate.belongs_to_pack
+            )
+            if _should_save_candidate(candidate, anomaly_settings) and not suppress_pack_member:
                 candidates.append(candidate)
-            if candidate.recommendation_level in {"critical", "good"}:
+                saved_candidate_ids.add(candidate.id)
+            if candidate.recommendation_level in {"critical", "good"} and not suppress_pack_member:
                 result.alert_candidates.append(candidate)
+        pack_records, pack_items = _build_candidate_pack_records(
+            all_candidates,
+            row,
+            settings,
+            substitute_context,
+            saved_candidate_ids,
+        )
 
     snapshots = []
     if settings.anomaly_settings.history.enabled and item_listings:
@@ -650,6 +670,8 @@ def _scan_item_once(
             target.id,
             item_listings,
             candidates,
+            packs=pack_records,
+            pack_items=pack_items,
             snapshots=snapshots,
             snapshot_alpha=settings.anomaly_settings.history.ewma_alpha,
             item_result=item_result,
@@ -670,6 +692,7 @@ def _scan_item_once(
                 result.skip_candidates_saved += 1
             else:
                 result.candidates_saved += 1
+        repository.save_candidate_packs(target.id, pack_records, pack_items)
         if snapshots:
             repository.save_market_snapshots(snapshots, alpha=settings.anomaly_settings.history.ewma_alpha)
     return item_result
@@ -838,13 +861,144 @@ def _substitute_context(
         premium_multiplier=craft_settings.substitute_premium_multiplier,
         min_sample=craft_settings.min_substitute_sample,
         same_collection_same_rarity=craft_settings.same_collection_same_rarity,
+        stale_after_seconds=craft_settings.substitute_stale_after_seconds,
     )
     return SubstituteContext(
         floor_rub=context.get("floor_rub"),
         median_rub=context.get("median_rub"),
         sample_size=int(context.get("sample_size") or 0),
+        item_count=int(context.get("item_count") or 0),
         cap_rub=context.get("cap_rub"),
+        last_scanned_at=str(context.get("last_scanned_at") or ""),
+        stale=bool(context.get("stale", True)),
+        reasons=list(context.get("reasons") or []),
     )
+
+
+def _build_candidate_pack_records(
+    candidate_pairs: list[tuple[MarketListing, Candidate]],
+    item: dict[str, Any],
+    settings: ParserSettings,
+    substitute_context: SubstituteContext | None,
+    saved_candidate_ids: set[str],
+) -> tuple[list[CandidatePack], list[CandidatePackItem]]:
+    if not settings.pack_detection_settings.enabled:
+        return [], []
+    groups: dict[str, list[tuple[MarketListing, Candidate]]] = {}
+    for listing, candidate in candidate_pairs:
+        if candidate.belongs_to_pack and candidate.pack_id:
+            groups.setdefault(candidate.pack_id, []).append((listing, candidate))
+    packs: list[CandidatePack] = []
+    pack_items: list[CandidatePackItem] = []
+    fee_multiplier = max(0.0, 1 - settings.default_market_fee_percent / 100)
+    thresholds = settings.anomaly_settings.thresholds
+    for pack_id, rows in groups.items():
+        rows.sort(key=lambda row: (row[0].buy_price_rub, row[0].id))
+        first_listing, first_candidate = rows[0]
+        prices = [listing.buy_price_rub for listing, _ in rows]
+        floats = [listing.float_value for listing, _ in rows if listing.float_value is not None]
+        pack_size = len(rows)
+        pack_cost = round(sum(prices), 2)
+        next_floor = first_candidate.pack_floor_after_rub
+        gross_resale = round(next_floor * pack_size, 2) if next_floor is not None else None
+        net_resale = round(gross_resale * fee_multiplier, 2) if gross_resale is not None else None
+        pack_profit = round(net_resale - pack_cost, 2) if net_resale is not None else None
+        pack_roi = round(pack_profit / pack_cost * 100, 2) if pack_profit is not None and pack_cost > 0 else None
+        gap_percent = (
+            round((next_floor / max(prices) - 1) * 100, 2)
+            if next_floor is not None and prices and max(prices) > 0
+            else None
+        )
+        capital_status, capital_manual = pack_capital_status(
+            pack_size,
+            pack_cost,
+            settings.capital_settings,
+        )
+        manual_review = bool(capital_manual or first_candidate.manual_review_required)
+        market_confidence = first_candidate.market_confidence or "low"
+        alert_level = resolve_pack_alert_level(
+            pack_profit,
+            pack_roi,
+            gap_percent,
+            market_confidence,
+            capital_status,
+            manual_review,
+            first_candidate.sample_size,
+            thresholds,
+            settings.market_risk_settings,
+        )
+        reasons = [
+            "pack strategy requires sweeping all listings before gap",
+            f"capital status: {capital_status}",
+        ]
+        if next_floor is None:
+            reasons.append("next floor after pack is unavailable")
+            manual_review = True
+            alert_level = "watch"
+        if substitute_context and substitute_context.stale:
+            reasons.append("substitute context stale")
+        packs.append(
+            CandidatePack(
+                pack_id=pack_id,
+                item_id=str(item.get("id") or first_listing.item_definition_id),
+                collection_id=item.get("collection_id"),
+                market_hash_name=str(item.get("market_hash_name") or first_listing.market_hash_name or first_listing.skin_name),
+                display_name=item.get("display_name") or first_listing.skin_name,
+                listing_ids=[listing.id for listing, _ in rows],
+                pack_size=pack_size,
+                pack_cost_rub=pack_cost,
+                min_buy_price_rub=min(prices) if prices else None,
+                max_buy_price_rub=max(prices) if prices else None,
+                min_float=min(floats) if floats else None,
+                max_float=max(floats) if floats else None,
+                next_floor_after_pack_rub=next_floor,
+                gap_percent=gap_percent,
+                gross_resale_rub=gross_resale,
+                net_resale_rub=net_resale,
+                estimated_profit_rub=pack_profit,
+                estimated_roi_percent=pack_roi,
+                capital_required_rub=pack_cost,
+                capital_status=capital_status,
+                market_confidence=market_confidence,
+                pack_confidence=market_confidence,
+                requires_sweep=True,
+                manual_review_required=manual_review,
+                alert_level=alert_level,
+                sample_size=first_candidate.sample_size,
+                neighbor_count=first_candidate.neighbor_count,
+                substitute_floor_rub=first_candidate.substitute_floor_rub,
+                substitute_cap_rub=first_candidate.substitute_cap_rub,
+                substitute_sample_size=(
+                    substitute_context.sample_size if substitute_context else first_candidate.substitute_sample_size
+                ),
+                substitute_last_scanned_at=(
+                    substitute_context.last_scanned_at if substitute_context else first_candidate.substitute_last_scanned_at
+                ),
+                substitute_stale=(
+                    substitute_context.stale if substitute_context else first_candidate.substitute_stale
+                ),
+                reasons=reasons,
+            )
+        )
+        for position, (listing, candidate) in enumerate(rows, start=1):
+            pack_items.append(
+                CandidatePackItem(
+                    pack_id=pack_id,
+                    candidate_id=candidate.id if candidate.id in saved_candidate_ids else None,
+                    listing_id=listing.id,
+                    item_id=listing.item_definition_id,
+                    buy_price_rub=listing.buy_price_rub,
+                    wear_rating=listing.float_value,
+                    pattern_template=listing.pattern,
+                    solo_exit_price_rub=candidate.solo_exit_price_rub,
+                    solo_net_profit_rub=candidate.estimated_profit_rub,
+                    solo_roi_percent=candidate.estimated_roi_percent,
+                    solo_alert_level=candidate.recommendation_level,
+                    solo_is_actionable=candidate.recommendation_level != "skip",
+                    position_in_pack=position,
+                )
+            )
+    return packs, pack_items
 
 
 def _duration_ms(started: float) -> int:

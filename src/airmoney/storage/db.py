@@ -178,6 +178,8 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             market_confidence TEXT NOT NULL DEFAULT '',
             liquidity_score REAL,
             requires_sweep INTEGER NOT NULL DEFAULT 0,
+            solo_requires_sweep INTEGER NOT NULL DEFAULT 0,
+            belongs_to_pack INTEGER NOT NULL DEFAULT 0,
             manual_review_required INTEGER NOT NULL DEFAULT 0,
             pack_id TEXT NOT NULL DEFAULT '',
             pack_size INTEGER NOT NULL DEFAULT 0,
@@ -186,6 +188,9 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             capital_required_rub REAL,
             substitute_floor_rub REAL,
             substitute_cap_rub REAL,
+            substitute_sample_size INTEGER,
+            substitute_last_scanned_at TEXT NOT NULL DEFAULT '',
+            substitute_stale INTEGER,
             raw_anomaly_score REAL,
             risk_adjusted_score REAL,
             parsed_at TEXT NOT NULL DEFAULT '',
@@ -198,6 +203,75 @@ def apply_schema(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_candidates_level_status
             ON candidates(recommendation_level, status, created_at);
+
+        CREATE TABLE IF NOT EXISTS candidate_packs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pack_id TEXT NOT NULL UNIQUE,
+            item_id TEXT NOT NULL,
+            collection_id TEXT,
+            market_hash_name TEXT NOT NULL,
+            display_name TEXT,
+            pack_size INTEGER NOT NULL,
+            pack_cost_rub REAL NOT NULL,
+            min_buy_price_rub REAL,
+            max_buy_price_rub REAL,
+            min_float REAL,
+            max_float REAL,
+            next_floor_after_pack_rub REAL,
+            gap_percent REAL,
+            gross_resale_rub REAL,
+            net_resale_rub REAL,
+            estimated_profit_rub REAL,
+            estimated_roi_percent REAL,
+            capital_required_rub REAL,
+            capital_status TEXT,
+            market_confidence TEXT,
+            pack_confidence TEXT,
+            requires_sweep INTEGER NOT NULL DEFAULT 1,
+            manual_review_required INTEGER NOT NULL DEFAULT 0,
+            alert_level TEXT NOT NULL,
+            sample_size INTEGER,
+            neighbor_count INTEGER,
+            substitute_floor_rub REAL,
+            substitute_cap_rub REAL,
+            substitute_sample_size INTEGER,
+            substitute_last_scanned_at TEXT,
+            substitute_stale INTEGER,
+            reasons_json TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE,
+            FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS candidate_pack_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pack_id TEXT NOT NULL,
+            candidate_id TEXT,
+            listing_id TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            buy_price_rub REAL NOT NULL,
+            wear_rating REAL,
+            pattern_template INTEGER,
+            solo_exit_price_rub REAL,
+            solo_net_profit_rub REAL,
+            solo_roi_percent REAL,
+            solo_alert_level TEXT,
+            solo_is_actionable INTEGER NOT NULL DEFAULT 0,
+            position_in_pack INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(pack_id) REFERENCES candidate_packs(pack_id) ON DELETE CASCADE,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(id) ON DELETE SET NULL,
+            FOREIGN KEY(listing_id) REFERENCES market_listings(id) ON DELETE CASCADE,
+            FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_candidate_packs_active
+            ON candidate_packs(is_active, alert_level, updated_at);
+
+        CREATE INDEX IF NOT EXISTS idx_candidate_pack_items_pack
+            ON candidate_pack_items(pack_id, position_in_pack);
 
         CREATE TABLE IF NOT EXISTS currency_rates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -215,6 +289,15 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             error TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS telegram_pack_alerts (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            sent_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (pack_id) REFERENCES candidate_packs(pack_id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS user_actions (
@@ -441,6 +524,8 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "market_confidence": "TEXT NOT NULL DEFAULT ''",
         "liquidity_score": "REAL",
         "requires_sweep": "INTEGER NOT NULL DEFAULT 0",
+        "solo_requires_sweep": "INTEGER NOT NULL DEFAULT 0",
+        "belongs_to_pack": "INTEGER NOT NULL DEFAULT 0",
         "manual_review_required": "INTEGER NOT NULL DEFAULT 0",
         "pack_id": "TEXT NOT NULL DEFAULT ''",
         "pack_size": "INTEGER NOT NULL DEFAULT 0",
@@ -449,6 +534,9 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "capital_required_rub": "REAL",
         "substitute_floor_rub": "REAL",
         "substitute_cap_rub": "REAL",
+        "substitute_sample_size": "INTEGER",
+        "substitute_last_scanned_at": "TEXT NOT NULL DEFAULT ''",
+        "substitute_stale": "INTEGER",
         "raw_anomaly_score": "REAL",
         "risk_adjusted_score": "REAL",
         "parsed_at": "TEXT NOT NULL DEFAULT ''",

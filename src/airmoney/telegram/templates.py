@@ -128,28 +128,48 @@ def batch_alert(candidates: list[dict], dashboard_url: str) -> str:
     return "\n".join(lines).strip()
 
 
-def pack_alert(candidates: list[dict], dashboard_url: str) -> str:
-    first = candidates[0]
-    title = first.get("skin_name") or first.get("display_name") or "-"
-    pack_size = first.get("pack_size") or len(candidates)
+def pack_alert(pack: dict, items: list[dict], dashboard_url: str) -> str:
+    title = pack.get("market_hash_name") or pack.get("display_name") or pack.get("item_display_name") or "-"
+    pack_size = pack.get("pack_size") or len(items)
     lines = [
         f"[PACK] {title}",
         "",
-        f"Level: {str(first.get('recommendation_level') or 'watch').upper()}",
-        f"Pack size: {pack_size}",
-        f"Pack cost: {format_money(first.get('pack_cost_rub'))}",
-        f"Next floor: {format_money(first.get('pack_floor_after_rub'))}",
-        f"Capital: {format_money(first.get('capital_required_rub'))}",
-        f"Conf: {first.get('market_confidence') or '-'}",
+        f"Level: {str(pack.get('alert_level') or 'watch').upper()}",
+        f"Lots: {pack_size}",
+        (
+            f"Buy: {format_money(pack.get('min_buy_price_rub'))}"
+            f"-{format_money(pack.get('max_buy_price_rub'))}"
+        ),
+        (
+            f"Floats: {format_float(pack.get('min_float'))}"
+            f"-{format_float(pack.get('max_float'))}"
+        ),
+        f"Cost: {format_money(pack.get('pack_cost_rub'))}",
+        f"Next floor: {format_money(pack.get('next_floor_after_pack_rub'))}",
+        (
+            f"Pack profit: {format_money(pack.get('estimated_profit_rub'), signed=True)} / "
+            f"{format_percent(pack.get('estimated_roi_percent'))}"
+        ),
+        f"Capital: {format_money(pack.get('capital_required_rub') or pack.get('pack_cost_rub'))}",
+        f"Conf: {pack.get('market_confidence') or pack.get('pack_confidence') or '-'}",
+        f"Mode: {'sweep required' if pack.get('requires_sweep') else 'solo'}",
         "",
+        "Solo:",
     ]
-    for index, candidate in enumerate(candidates[:8], start=1):
-        lines.append(
-            f"{index}. buy {format_money(candidate.get('buy_price_rub'))} / "
-            f"exit {format_money(candidate.get('exit_price_rub') or candidate.get('estimated_resale_price_rub'))} / "
-            f"fl {format_float(candidate.get('float_value'))}"
+    for item in items[:8]:
+        solo_profit = item.get("solo_net_profit_rub")
+        solo_roi = item.get("solo_roi_percent")
+        solo_text = (
+            f"{format_money(solo_profit, signed=True)} / {format_percent(solo_roi)}"
+            if solo_profit is not None
+            else "solo weak/negative"
         )
-    lines.extend(["", f"Dashboard: {dashboard_url}"])
+        lines.append(
+            f"- {format_money(item.get('buy_price_rub'))} -> "
+            f"exit {format_money(item.get('solo_exit_price_rub'))} | "
+            f"{solo_text} | fl {format_float(item.get('wear_rating'))}"
+        )
+    lines.extend(["", f"Dashboard: {dashboard_url}/packs/{pack.get('pack_id')}"])
     return "\n".join(lines).strip()
 
 
