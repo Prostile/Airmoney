@@ -486,6 +486,116 @@ class SteamGuardSettings:
 
 
 @dataclass
+class MarketRiskSettings:
+    enabled: bool = True
+    conservative_exit_enabled: bool = True
+    exit_price_strategy: str = "conservative"
+    min_sample_for_good: int = 8
+    min_sample_for_critical: int = 15
+    min_neighbor_for_good: int = 5
+    min_neighbor_for_critical: int = 10
+    thin_market_max_level: str = "good"
+    very_thin_market_max_level: str = "watch"
+    downgrade_if_requires_sweep: bool = True
+    sweep_max_level_without_capital: str = "good"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "MarketRiskSettings":
+        raw = data or {}
+        return cls(
+            enabled=to_bool(raw.get("enabled", True)),
+            conservative_exit_enabled=to_bool(raw.get("conservative_exit_enabled", True)),
+            exit_price_strategy=str(raw.get("exit_price_strategy") or "conservative"),
+            min_sample_for_good=max(1, _safe_int(raw.get("min_sample_for_good"), 8)),
+            min_sample_for_critical=max(1, _safe_int(raw.get("min_sample_for_critical"), 15)),
+            min_neighbor_for_good=max(1, _safe_int(raw.get("min_neighbor_for_good"), 5)),
+            min_neighbor_for_critical=max(1, _safe_int(raw.get("min_neighbor_for_critical"), 10)),
+            thin_market_max_level=str(raw.get("thin_market_max_level") or "good"),
+            very_thin_market_max_level=str(raw.get("very_thin_market_max_level") or "watch"),
+            downgrade_if_requires_sweep=to_bool(raw.get("downgrade_if_requires_sweep", True)),
+            sweep_max_level_without_capital=str(raw.get("sweep_max_level_without_capital") or "good"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class PackDetectionSettings:
+    enabled: bool = True
+    min_gap_percent: float = 30.0
+    min_pack_size: int = 2
+    max_pack_size: int = 5
+    alert_as_single_pack: bool = True
+    max_pack_to_sample_ratio: float = 0.5
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "PackDetectionSettings":
+        raw = data or {}
+        min_pack = max(1, _safe_int(raw.get("min_pack_size"), 2))
+        max_pack = max(min_pack, _safe_int(raw.get("max_pack_size"), 5))
+        return cls(
+            enabled=to_bool(raw.get("enabled", True)),
+            min_gap_percent=max(0.0, _safe_float(raw.get("min_gap_percent"), 30.0)),
+            min_pack_size=min_pack,
+            max_pack_size=max_pack,
+            alert_as_single_pack=to_bool(raw.get("alert_as_single_pack", True)),
+            max_pack_to_sample_ratio=max(0.0, min(1.0, _safe_float(raw.get("max_pack_to_sample_ratio"), 0.5))),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class CapitalSettings:
+    enabled: bool = True
+    max_single_buy_rub: float = 5000.0
+    max_bundle_cost_rub: float = 15000.0
+    max_units_per_item: int = 3
+    warn_if_sweep_required: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "CapitalSettings":
+        raw = data or {}
+        return cls(
+            enabled=to_bool(raw.get("enabled", True)),
+            max_single_buy_rub=max(0.0, _safe_float(raw.get("max_single_buy_rub"), 5000.0)),
+            max_bundle_cost_rub=max(0.0, _safe_float(raw.get("max_bundle_cost_rub"), 15000.0)),
+            max_units_per_item=max(1, _safe_int(raw.get("max_units_per_item"), 3)),
+            warn_if_sweep_required=to_bool(raw.get("warn_if_sweep_required", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class CraftContextSettings:
+    enabled: bool = True
+    substitute_cap_enabled: bool = True
+    substitute_premium_multiplier: float = 1.10
+    same_collection_same_rarity: bool = True
+    target_float_max: float = 0.015
+    min_substitute_sample: int = 3
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "CraftContextSettings":
+        raw = data or {}
+        return cls(
+            enabled=to_bool(raw.get("enabled", True)),
+            substitute_cap_enabled=to_bool(raw.get("substitute_cap_enabled", True)),
+            substitute_premium_multiplier=max(0.0, _safe_float(raw.get("substitute_premium_multiplier"), 1.10)),
+            same_collection_same_rarity=to_bool(raw.get("same_collection_same_rarity", True)),
+            target_float_max=max(0.0, _safe_float(raw.get("target_float_max"), 0.015)),
+            min_substitute_sample=max(1, _safe_int(raw.get("min_substitute_sample"), 3)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class Collection:
     id: str
     name: str
@@ -540,6 +650,10 @@ class ParserSettings:
     scan_optimization_config: str = field(default_factory=lambda: json.dumps(ScanOptimizationSettings().to_dict(), ensure_ascii=False))
     history_optimization_config: str = field(default_factory=lambda: json.dumps(HistoryOptimizationSettings().to_dict(), ensure_ascii=False))
     steam_guard_config: str = field(default_factory=lambda: json.dumps(SteamGuardSettings().to_dict(), ensure_ascii=False))
+    market_risk_config: str = field(default_factory=lambda: json.dumps(MarketRiskSettings().to_dict(), ensure_ascii=False))
+    pack_detection_config: str = field(default_factory=lambda: json.dumps(PackDetectionSettings().to_dict(), ensure_ascii=False))
+    capital_config: str = field(default_factory=lambda: json.dumps(CapitalSettings().to_dict(), ensure_ascii=False))
+    craft_context_config: str = field(default_factory=lambda: json.dumps(CraftContextSettings().to_dict(), ensure_ascii=False))
     updated_at: str = field(default_factory=utc_now_iso)
 
     @property
@@ -633,6 +747,50 @@ class ParserSettings:
     def set_steam_guard_settings(self, value: SteamGuardSettings) -> None:
         self.steam_guard_config = json.dumps(value.to_dict(), ensure_ascii=False)
 
+    @property
+    def market_risk_settings(self) -> MarketRiskSettings:
+        try:
+            data = json.loads(self.market_risk_config or "{}")
+        except Exception:
+            data = {}
+        return MarketRiskSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_market_risk_settings(self, value: MarketRiskSettings) -> None:
+        self.market_risk_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def pack_detection_settings(self) -> PackDetectionSettings:
+        try:
+            data = json.loads(self.pack_detection_config or "{}")
+        except Exception:
+            data = {}
+        return PackDetectionSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_pack_detection_settings(self, value: PackDetectionSettings) -> None:
+        self.pack_detection_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def capital_settings(self) -> CapitalSettings:
+        try:
+            data = json.loads(self.capital_config or "{}")
+        except Exception:
+            data = {}
+        return CapitalSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_capital_settings(self, value: CapitalSettings) -> None:
+        self.capital_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
+    @property
+    def craft_context_settings(self) -> CraftContextSettings:
+        try:
+            data = json.loads(self.craft_context_config or "{}")
+        except Exception:
+            data = {}
+        return CraftContextSettings.from_dict(data if isinstance(data, dict) else {})
+
+    def set_craft_context_settings(self, value: CraftContextSettings) -> None:
+        self.craft_context_config = json.dumps(value.to_dict(), ensure_ascii=False)
+
 
 @dataclass
 class SnipingRule:
@@ -723,6 +881,24 @@ class Candidate:
     sample_size: int = 0
     neighbor_count: int = 0
     anomaly_reasons: str = ""
+    anomaly_baseline_price_rub: float | None = None
+    exit_price_rub: float | None = None
+    exit_price_model: str = ""
+    solo_exit_price_rub: float | None = None
+    sweep_exit_price_rub: float | None = None
+    market_confidence: str = ""
+    liquidity_score: float | None = None
+    requires_sweep: bool = False
+    manual_review_required: bool = False
+    pack_id: str = ""
+    pack_size: int = 0
+    pack_cost_rub: float | None = None
+    pack_floor_after_rub: float | None = None
+    capital_required_rub: float | None = None
+    substitute_floor_rub: float | None = None
+    substitute_cap_rub: float | None = None
+    raw_anomaly_score: float | None = None
+    risk_adjusted_score: float | None = None
     parsed_at: str = ""
     status: str = "new"
     created_at: str = field(default_factory=utc_now_iso)

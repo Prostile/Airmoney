@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from airmoney.anomaly.baselines import assign_float_bucket
 from airmoney.anomaly.candidates import candidate_from_anomaly_result
+from airmoney.anomaly.exit_risk import SubstituteContext
 from airmoney.anomaly.history import build_market_snapshots
 from airmoney.anomaly.matching import passes_item_match
 from airmoney.anomaly.models import parsed_listing_from_market_listing
@@ -136,8 +137,9 @@ def _legacy_scan_once(
                     candidates_saved=result.candidates_saved,
                 )
                 anomaly_settings = settings.anomaly_settings
+                rule = repository.get_rule_for_item(target.id)
                 response = page.goto(
-                    _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by, row),
+                    _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by, row, rule),
                     wait_until="domcontentloaded",
                     timeout=30000,
                 )
@@ -216,7 +218,6 @@ def _legacy_scan_once(
                     settings,
                     result,
                 )
-                rule = repository.get_rule_for_item(target.id)
                 historical_baselines = (
                     repository.list_market_baselines(
                         target.id,
@@ -231,6 +232,7 @@ def _legacy_scan_once(
                     rule,
                     settings,
                     historical_baselines=historical_baselines,
+                    substitute_context=None,
                 )
                 for listing, candidate in candidates:
                     repository.save_listing(listing)
@@ -476,8 +478,9 @@ def _scan_item_once(
     )
     shallow_target = max(4, min(scan_optimization.shallow_target_listings, effective_target))
 
+    rule = repository.get_rule_for_item(target.id)
     response = page.goto(
-        _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by, row),
+        _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by, row, rule),
         wait_until="domcontentloaded",
         timeout=30000,
     )
@@ -598,17 +601,18 @@ def _scan_item_once(
             repository.save_item_scan_failure(run_id, target.id, item_result)
         return item_result
 
-    rule = repository.get_rule_for_item(target.id)
     eligible_info = _rule_eligible_listing_info(item_listings, row, rule)
     rule_eligible_listings = eligible_info["eligible_listings"]
     candidates: list[Candidate] = []
     if deep_scan_performed and rule_eligible_listings:
+        substitute_context = _substitute_context(repository, row, settings)
         all_candidates = _evaluate_item_listings(
             rule_eligible_listings,
             row,
             rule,
             settings,
             historical_baselines=historical_baselines,
+            substitute_context=substitute_context,
         )
         for _, candidate in all_candidates:
             if _should_save_candidate(candidate, anomaly_settings):
@@ -820,6 +824,29 @@ def _optional_rule_float(rule: dict[str, Any] | None, key: str) -> float | None:
         return None
 
 
+def _substitute_context(
+    repository: Repository,
+    item: dict[str, Any],
+    settings: ParserSettings,
+) -> SubstituteContext | None:
+    craft_settings = settings.craft_context_settings
+    if not craft_settings.enabled or not craft_settings.substitute_cap_enabled:
+        return None
+    context = repository.substitute_price_context(
+        item,
+        target_float_max=craft_settings.target_float_max,
+        premium_multiplier=craft_settings.substitute_premium_multiplier,
+        min_sample=craft_settings.min_substitute_sample,
+        same_collection_same_rarity=craft_settings.same_collection_same_rarity,
+    )
+    return SubstituteContext(
+        floor_rub=context.get("floor_rub"),
+        median_rub=context.get("median_rub"),
+        sample_size=int(context.get("sample_size") or 0),
+        cap_rub=context.get("cap_rub"),
+    )
+
+
 def _duration_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
@@ -842,6 +869,7 @@ def _evaluate_item_listings(
     rule: dict[str, Any] | None,
     settings: ParserSettings,
     historical_baselines: dict[str, float] | None = None,
+    substitute_context: SubstituteContext | None = None,
 ) -> list[tuple[MarketListing, Candidate]]:
     if not listings:
         return []
@@ -869,6 +897,7 @@ def _evaluate_item_listings(
         rule,
         settings,
         historical_baselines=historical_baselines,
+        substitute_context=substitute_context,
     )
     pairs: list[tuple[MarketListing, Candidate]] = []
     for listing, anomaly_result in zip(listings, anomaly_results, strict=False):
@@ -903,11 +932,16 @@ def _should_save_candidate(candidate: Candidate, anomaly_settings: Any) -> bool:
     return candidate.recommendation_level != "skip" or anomaly_settings.debug.save_skip_candidates
 
 
-def _sorted_market_url(url: str, sort_by: str, item: dict[str, Any] | None = None) -> str:
+def _sorted_market_url(
+    url: str,
+    sort_by: str,
+    item: dict[str, Any] | None = None,
+    rule: dict[str, Any] | None = None,
+) -> str:
     parsed = urllib.parse.urlsplit(url)
     params = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
     if item:
-        params.update(steam_market_filter_params(item))
+        params.update(steam_market_filter_params(item, rule))
     if sort_by == "price_asc":
         params.update({"sort_column": "price", "sort_dir": "asc"})
     params.setdefault("start", "0")

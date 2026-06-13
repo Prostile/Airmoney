@@ -40,6 +40,7 @@ from airmoney.telegram.notifier import load_dotenv
 
 security = HTTPBasic()
 templates = Jinja2Templates(directory=str(PACKAGE_ROOT / "web" / "templates"))
+WEB_PAGE_SIZE = 100
 
 
 def create_app(repo: Repository | None = None) -> FastAPI:
@@ -154,14 +155,16 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         return RedirectResponse(f"/dashboard?message={message}", status_code=303)
 
     @app.get("/scan-runs", response_class=HTMLResponse)
-    def scan_runs_page(request: Request, _: str = Depends(require_auth)):
+    def scan_runs_page(request: Request, page: int = 1, _: str = Depends(require_auth)):
+        scan_runs, pagination = _paginate_rows(repository.list_scan_runs(limit=100000), page, request)
         return templates.TemplateResponse(
             request,
             "scan_runs.html",
             {
                 "request": request,
                 "active": "scan_runs",
-                "scan_runs": repository.list_scan_runs(limit=100),
+                "scan_runs": scan_runs,
+                "pagination": pagination,
                 "scan_summary": repository.scan_target_summary(),
                 "message": request.query_params.get("message", ""),
             },
@@ -183,12 +186,23 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 "scan_optimization": settings.scan_optimization_settings,
                 "history_optimization": settings.history_optimization_settings,
                 "steam_guard": settings.steam_guard_settings,
+                "market_risk": settings.market_risk_settings,
+                "pack_detection": settings.pack_detection_settings,
+                "capital": settings.capital_settings,
+                "craft_context": settings.craft_context_settings,
+                "steam_guard_state": repository.get_steam_guard_state(),
                 "telegram_alert": settings.telegram_alert_settings,
                 "exteriors": EXTERIORS,
                 "exterior_field": _exterior_field,
                 "message": request.query_params.get("message", ""),
             },
         )
+
+    @app.post("/settings/steam-guard/reset")
+    def reset_steam_guard(_: str = Depends(require_auth)) -> RedirectResponse:
+        repository.reset_steam_guard_state()
+        repository.log_user_action("steam_guard", "global", "reset")
+        return RedirectResponse("/settings?message=steam_guard_reset", status_code=303)
 
     @app.post("/settings")
     async def save_settings(request: Request, _: str = Depends(require_auth)) -> RedirectResponse:
@@ -360,6 +374,70 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         steam_guard.max_network_retries = _int(form, "steam_guard_max_network_retries", steam_guard.max_network_retries)
         settings.set_steam_guard_settings(steam_guard)
 
+        market_risk = current_settings.market_risk_settings
+        market_risk.enabled = _checkbox(form, "market_risk_enabled")
+        market_risk.conservative_exit_enabled = _checkbox(form, "market_risk_conservative_exit_enabled")
+        market_risk.exit_price_strategy = str(form.get("market_risk_exit_price_strategy", market_risk.exit_price_strategy) or "conservative")
+        market_risk.min_sample_for_good = _int(form, "market_risk_min_sample_for_good", market_risk.min_sample_for_good)
+        market_risk.min_sample_for_critical = _int(
+            form,
+            "market_risk_min_sample_for_critical",
+            market_risk.min_sample_for_critical,
+        )
+        market_risk.min_neighbor_for_good = _int(form, "market_risk_min_neighbor_for_good", market_risk.min_neighbor_for_good)
+        market_risk.min_neighbor_for_critical = _int(
+            form,
+            "market_risk_min_neighbor_for_critical",
+            market_risk.min_neighbor_for_critical,
+        )
+        market_risk.thin_market_max_level = str(form.get("market_risk_thin_market_max_level", market_risk.thin_market_max_level) or "good")
+        market_risk.very_thin_market_max_level = str(
+            form.get("market_risk_very_thin_market_max_level", market_risk.very_thin_market_max_level) or "watch"
+        )
+        market_risk.downgrade_if_requires_sweep = _checkbox(form, "market_risk_downgrade_if_requires_sweep")
+        market_risk.sweep_max_level_without_capital = str(
+            form.get("market_risk_sweep_max_level_without_capital", market_risk.sweep_max_level_without_capital) or "good"
+        )
+        settings.set_market_risk_settings(market_risk)
+
+        pack_detection = current_settings.pack_detection_settings
+        pack_detection.enabled = _checkbox(form, "pack_detection_enabled")
+        pack_detection.min_gap_percent = _float(form, "pack_detection_min_gap_percent", pack_detection.min_gap_percent)
+        pack_detection.min_pack_size = _int(form, "pack_detection_min_pack_size", pack_detection.min_pack_size)
+        pack_detection.max_pack_size = _int(form, "pack_detection_max_pack_size", pack_detection.max_pack_size)
+        pack_detection.alert_as_single_pack = _checkbox(form, "pack_detection_alert_as_single_pack")
+        pack_detection.max_pack_to_sample_ratio = _float(
+            form,
+            "pack_detection_max_pack_to_sample_ratio",
+            pack_detection.max_pack_to_sample_ratio,
+        )
+        settings.set_pack_detection_settings(pack_detection)
+
+        capital = current_settings.capital_settings
+        capital.enabled = _checkbox(form, "capital_enabled")
+        capital.max_single_buy_rub = _float(form, "capital_max_single_buy_rub", capital.max_single_buy_rub)
+        capital.max_bundle_cost_rub = _float(form, "capital_max_bundle_cost_rub", capital.max_bundle_cost_rub)
+        capital.max_units_per_item = _int(form, "capital_max_units_per_item", capital.max_units_per_item)
+        capital.warn_if_sweep_required = _checkbox(form, "capital_warn_if_sweep_required")
+        settings.set_capital_settings(capital)
+
+        craft_context = current_settings.craft_context_settings
+        craft_context.enabled = _checkbox(form, "craft_context_enabled")
+        craft_context.substitute_cap_enabled = _checkbox(form, "craft_context_substitute_cap_enabled")
+        craft_context.substitute_premium_multiplier = _float(
+            form,
+            "craft_context_substitute_premium_multiplier",
+            craft_context.substitute_premium_multiplier,
+        )
+        craft_context.same_collection_same_rarity = _checkbox(form, "craft_context_same_collection_same_rarity")
+        craft_context.target_float_max = _float(form, "craft_context_target_float_max", craft_context.target_float_max)
+        craft_context.min_substitute_sample = _int(
+            form,
+            "craft_context_min_substitute_sample",
+            craft_context.min_substitute_sample,
+        )
+        settings.set_craft_context_settings(craft_context)
+
         telegram_alert = current_settings.telegram_alert_settings
         telegram_alert.message_format = str(form.get("telegram_message_format", telegram_alert.message_format) or "compact")
         telegram_alert.include_link = _checkbox(form, "telegram_include_link")
@@ -382,14 +460,16 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         return RedirectResponse("/settings?message=saved", status_code=303)
 
     @app.get("/collections", response_class=HTMLResponse)
-    def collections_page(request: Request, _: str = Depends(require_auth)):
+    def collections_page(request: Request, page: int = 1, _: str = Depends(require_auth)):
+        collections, pagination = _paginate_rows(repository.list_collections(), page, request)
         return templates.TemplateResponse(
             request,
             "collections.html",
             {
                 "request": request,
                 "active": "collections",
-                "collections": repository.list_collections(),
+                "collections": collections,
+                "pagination": pagination,
                 "message": request.query_params.get("message", ""),
             },
         )
@@ -446,15 +526,22 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         return RedirectResponse(f"/collections?message={urllib.parse.quote(message)}", status_code=303)
 
     @app.get("/items", response_class=HTMLResponse)
-    def items_page(request: Request, collection_id: str | None = None, _: str = Depends(require_auth)):
+    def items_page(
+        request: Request,
+        collection_id: str | None = None,
+        page: int = 1,
+        _: str = Depends(require_auth),
+    ):
+        items, pagination = _paginate_rows(repository.list_items(collection_id), page, request)
         return templates.TemplateResponse(
             request,
             "items.html",
             {
                 "request": request,
                 "active": "items",
-                "items": repository.list_items(collection_id),
+                "items": items,
                 "collections": repository.list_collections(),
+                "pagination": pagination,
                 "exteriors": EXTERIORS,
                 "rarities": RARITIES,
                 "qualities": QUALITIES,
@@ -599,22 +686,28 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         collection_id: str | None = None,
         item_id: str | None = None,
         active_only: bool = False,
+        page: int = 1,
         _: str = Depends(require_auth),
     ):
-        settings = repository.get_settings()
+        listings, pagination = _paginate_rows(
+            repository.list_market_listings(
+                collection_id=collection_id,
+                item_id=item_id,
+                active_only=active_only,
+                limit=100000,
+            ),
+            page,
+            request,
+        )
         return templates.TemplateResponse(
             request,
             "listings.html",
             {
                 "request": request,
                 "active": "listings",
-                "listings": repository.list_market_listings(
-                    collection_id=collection_id,
-                    item_id=item_id,
-                    active_only=active_only,
-                    limit=settings.web_table_limit,
-                ),
+                "listings": listings,
                 "collections": repository.list_collections(),
+                "pagination": pagination,
                 "filters": dict(request.query_params),
                 "message": request.query_params.get("message", ""),
             },
@@ -631,41 +724,58 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         min_profit: float | None = None,
         min_roi: float | None = None,
         min_score: float | None = None,
+        min_risk_adjusted_score: float | None = None,
         float_bucket: str | None = None,
+        requires_sweep: bool | None = None,
+        market_confidence: str | None = None,
+        manual_review_required: bool | None = None,
+        max_capital_required: float | None = None,
         souvenir_only: bool = False,
         exact_item_only: bool = False,
         date_from: str | None = None,
         date_to: str | None = None,
         sort: str = "time",
+        page: int = 1,
         _: str = Depends(require_auth),
     ):
         settings = repository.get_settings()
+        candidates, pagination = _paginate_rows(
+            repository.list_candidates(
+                only_new=only_new,
+                level=level,
+                status=status,
+                collection_id=collection_id,
+                item_id=item_id,
+                min_profit=min_profit,
+                min_roi=min_roi,
+                min_score=min_score,
+                min_risk_adjusted_score=min_risk_adjusted_score,
+                float_bucket=float_bucket,
+                requires_sweep=requires_sweep,
+                market_confidence=market_confidence,
+                manual_review_required=manual_review_required,
+                max_capital_required=max_capital_required,
+                souvenir_only=souvenir_only,
+                exact_item_only=exact_item_only,
+                date_from=date_from,
+                date_to=date_to,
+                limit=100000,
+                sort=sort,
+            ),
+            page,
+            request,
+        )
         return templates.TemplateResponse(
             request,
             "candidates.html",
             {
                 "request": request,
                 "active": "candidates",
-                "candidates": repository.list_candidates(
-                    only_new=only_new,
-                    level=level,
-                    status=status,
-                    collection_id=collection_id,
-                    item_id=item_id,
-                    min_profit=min_profit,
-                    min_roi=min_roi,
-                    min_score=min_score,
-                    float_bucket=float_bucket,
-                    souvenir_only=souvenir_only,
-                    exact_item_only=exact_item_only,
-                    date_from=date_from,
-                    date_to=date_to,
-                    limit=settings.web_table_limit,
-                    sort=sort,
-                ),
+                "candidates": candidates,
                 "collections": repository.list_collections(),
                 "items": repository.list_items(collection_id),
                 "float_buckets": settings.anomaly_settings.float_buckets,
+                "pagination": pagination,
                 "filters": dict(request.query_params),
                 "message": request.query_params.get("message", ""),
             },
@@ -757,14 +867,16 @@ def create_app(repo: Repository | None = None) -> FastAPI:
 
 
     @app.get("/rule-stats", response_class=HTMLResponse)
-    def rule_stats_page(request: Request, _: str = Depends(require_auth)):
+    def rule_stats_page(request: Request, page: int = 1, _: str = Depends(require_auth)):
+        rows, pagination = _paginate_rows(repository.rule_stats(limit=100000), page, request)
         return templates.TemplateResponse(
             request,
             "rule_stats.html",
             {
                 "request": request,
                 "active": "rule_stats",
-                "rows": repository.rule_stats(),
+                "rows": rows,
+                "pagination": pagination,
                 "message": request.query_params.get("message", ""),
             },
         )
@@ -911,6 +1023,39 @@ def _extract_exterior(market_hash_name: str) -> str:
 
 def _split_reasons(value: str) -> list[str]:
     return [part.strip() for part in str(value or "").split(";") if part.strip()]
+
+
+def _paginate_rows(
+    rows: list[dict[str, Any]],
+    page: int,
+    request: Request,
+    per_page: int = WEB_PAGE_SIZE,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    total = len(rows)
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(int(page or 1), pages))
+    start_index = (page - 1) * per_page
+    end_index = min(start_index + per_page, total)
+    pagination = {
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": pages,
+        "start": start_index + 1 if total else 0,
+        "end": end_index,
+        "has_prev": page > 1,
+        "has_next": page < pages,
+        "prev_url": _page_url(request, page - 1),
+        "next_url": _page_url(request, page + 1),
+    }
+    return rows[start_index:end_index], pagination
+
+
+def _page_url(request: Request, page: int) -> str:
+    params = dict(request.query_params)
+    params["page"] = str(max(1, page))
+    query = urllib.parse.urlencode(params)
+    return f"{request.url.path}?{query}" if query else str(request.url.path)
 
 
 app = create_app()

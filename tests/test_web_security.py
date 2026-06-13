@@ -45,3 +45,35 @@ def test_dashboard_uses_scheme_relative_static_paths(tmp_path, monkeypatch):
     assert 'href="/static/dashboard.css"' in response.text
     assert 'src="/static/app.js"' in response.text
     assert "http://testserver/static/" not in response.text
+
+
+def test_settings_can_reset_steam_guard_cooldown(tmp_path, monkeypatch):
+    monkeypatch.setenv("AIRMONEY_WEB_USER", "admin")
+    monkeypatch.setenv("AIRMONEY_WEB_PASSWORD", "secret")
+    repo = Repository(tmp_path / "test.sqlite3")
+    repo.set_steam_guard_state(
+        cooldown_until="2099-01-01T00:00:00+00:00",
+        reason="access_limited",
+        consecutive_blocks=3,
+        last_error_at="2098-12-31T23:59:00+00:00",
+    )
+    app = create_app(repo)
+
+    with TestClient(app) as client:
+        settings_response = client.get("/settings", headers=_auth_header())
+        reset_response = client.post(
+            "/settings/steam-guard/reset",
+            headers=_auth_header(),
+            follow_redirects=False,
+        )
+
+    assert settings_response.status_code == 200
+    assert "Reset cooldown" in settings_response.text
+    assert "2099-01-01T00:00:00+00:00" in settings_response.text
+    assert reset_response.status_code == 303
+
+    state = repo.get_steam_guard_state()
+    assert state["steam_cooldown_until"] == ""
+    assert state["steam_cooldown_reason"] == ""
+    assert state["steam_consecutive_blocks"] == 0
+    assert state["last_steam_error_at"] == ""

@@ -15,7 +15,7 @@ from airmoney.config.models import (
 from airmoney.scheduler import monitor as monitor_module
 from airmoney.steam.browser import ResourceBlocker, SteamAccessLimited
 from airmoney.steam.parser import JS_EXTRACT_MARKET_CARDS
-from airmoney.steam.scanner import calculate_floor_gap, looks_price_sorted
+from airmoney.steam.scanner import _sorted_market_url, calculate_floor_gap, looks_price_sorted
 from airmoney.storage.repositories import Repository
 
 
@@ -181,6 +181,19 @@ def test_gap_and_sort_helpers():
     assert not looks_price_sorted([650, 610, 635, 620])
     assert calculate_floor_gap([610, 620, 635, 650, 660]) < 10
     assert calculate_floor_gap([410, 690, 720, 760, 800]) >= 10
+
+
+def test_sorted_market_url_adds_rule_float_assetproperty_filter():
+    url = _sorted_market_url(
+        "https://steamcommunity.com/market/listings/730/AK-47%20%7C%20Test%20%28Factory%20New%29",
+        "price_asc",
+        {"exterior": "Factory New", "is_souvenir": False, "is_stattrak": False},
+        {"float_min": 0.0, "float_max": 0.015},
+    )
+
+    assert "assetproperty=CAIVAAAAAB2PwnU8" in url
+    assert "sort_column=price" in url
+    assert "sort_dir=asc" in url
 
 
 def test_steam_guard_skips_scan_during_active_cooldown(tmp_path):

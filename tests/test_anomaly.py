@@ -112,11 +112,11 @@ def test_float_peer_neighbors_and_discount():
     assert result.discount_percent == 41.48
 
 
-def test_fair_price_estimation_and_override():
+def test_fair_price_estimation_does_not_use_target_resale_override():
     settings = AnomalySettings()
     assert estimate_fair_price(800, None, None, None, settings.scoring) == 800
     assert estimate_fair_price(800, 900, None, None, settings.scoring) == 843.75
-    assert estimate_fair_price(800, 900, None, {"target_resale_price_rub": 1000}, settings.scoring) == 1000
+    assert estimate_fair_price(800, 900, None, {"target_resale_price_rub": 1000}, settings.scoring) == 843.75
 
 
 def test_real_profit_calculation():
@@ -137,7 +137,7 @@ def test_alert_level_resolution():
 
 
 def test_anomaly_analyzer_result_uses_real_profit_and_reasons():
-    settings = ParserSettings()
+    settings = ParserSettings(default_market_fee_percent=13)
     anomaly = settings.anomaly_settings
     anomaly.sample.min_listings = 5
     anomaly.nearest_neighbors.min_neighbors = 4
@@ -156,14 +156,15 @@ def test_anomaly_analyzer_result_uses_real_profit_and_reasons():
     result = analyze_listing(candidate, sample, {"enabled": True}, {"enabled": True}, settings)
 
     assert result.fair_price_rub is not None
+    assert result.exit_price_rub == 690
     assert result.net_profit_rub is not None
     assert result.roi_percent is not None
     assert result.alert_level in {"critical", "good", "watch"}
     assert result.exact_item_match is True
-    assert any("медианы" in reason for reason in result.reasons)
+    assert any("conservative exit price" in reason for reason in result.reasons)
 
 
-def test_target_resale_price_override_in_analyzer():
+def test_target_resale_price_caps_exit_without_overriding_baseline():
     settings = ParserSettings()
     anomaly = settings.anomaly_settings
     anomaly.sample.min_listings = 5
@@ -172,7 +173,8 @@ def test_target_resale_price_override_in_analyzer():
 
     result = analyze_listing(sample[0], sample, {"enabled": True}, {"target_resale_price_rub": 1000}, settings)
 
-    assert result.fair_price_rub == 1000
+    assert result.fair_price_rub != 1000
+    assert result.exit_price_rub == 690
 
 
 def test_rule_min_profit_and_roi_override_anomaly_thresholds():
@@ -209,7 +211,7 @@ def test_rule_min_profit_and_roi_override_anomaly_thresholds():
     assert accepted.alert_level in {"critical", "good", "watch"}
 
 
-def test_target_float_and_priority_increase_anomaly_score():
+def test_target_float_bonus_increases_score_but_priority_does_not():
     settings = ParserSettings()
     anomaly = settings.anomaly_settings
     anomaly.sample.min_listings = 5
@@ -240,9 +242,33 @@ def test_target_float_and_priority_increase_anomaly_score():
     )
 
     assert boosted.anomaly_score > plain.anomaly_score
-    assert any("целевой диапазон" in reason for reason in boosted.reasons)
-    assert any("priority" in reason for reason in boosted.reasons)
+    assert any("target float range" in reason for reason in boosted.reasons)
+    assert not any("priority" in reason for reason in boosted.reasons)
     assert any("trade-up filler" in reason for reason in boosted.reasons)
+
+
+def test_tec9_pack_uses_solo_exit_and_does_not_create_many_critical_alerts():
+    settings = ParserSettings(default_market_fee_percent=13)
+    anomaly = settings.anomaly_settings
+    anomaly.sample.min_listings = 5
+    anomaly.nearest_neighbors.min_neighbors = 4
+    settings.set_anomaly_settings(anomaly)
+    prices = [2493, 3205, 3205, 3233, 6188, 6188, 7519, 11563]
+    sample = [listing(price, 0.011 + index * 0.0001) for index, price in enumerate(prices)]
+
+    first = analyze_listing(sample[0], sample, {"enabled": True}, {"enabled": True}, settings)
+    results = [
+        analyze_listing(candidate, sample, {"enabled": True}, {"enabled": True}, settings)
+        for candidate in sample[:4]
+    ]
+
+    assert first.solo_exit_price_rub == 3205
+    assert first.exit_price_rub == 3205
+    assert first.net_profit_rub == 295.35
+    assert first.pack_size == 4
+    assert first.pack_cost_rub == 12136
+    assert first.pack_floor_after_rub == 6188
+    assert sum(1 for result in results if result.alert_level == "critical") <= 1
 
 
 def test_anomaly_disabled_uses_legacy_profit_logic():

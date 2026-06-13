@@ -58,6 +58,10 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             scan_optimization_config TEXT NOT NULL DEFAULT '{}',
             history_optimization_config TEXT NOT NULL DEFAULT '{}',
             steam_guard_config TEXT NOT NULL DEFAULT '{}',
+            market_risk_config TEXT NOT NULL DEFAULT '{}',
+            pack_detection_config TEXT NOT NULL DEFAULT '{}',
+            capital_config TEXT NOT NULL DEFAULT '{}',
+            craft_context_config TEXT NOT NULL DEFAULT '{}',
             updated_at TEXT NOT NULL
         );
 
@@ -166,6 +170,24 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             sample_size INTEGER NOT NULL DEFAULT 0,
             neighbor_count INTEGER NOT NULL DEFAULT 0,
             anomaly_reasons TEXT NOT NULL DEFAULT '',
+            anomaly_baseline_price_rub REAL,
+            exit_price_rub REAL,
+            exit_price_model TEXT NOT NULL DEFAULT '',
+            solo_exit_price_rub REAL,
+            sweep_exit_price_rub REAL,
+            market_confidence TEXT NOT NULL DEFAULT '',
+            liquidity_score REAL,
+            requires_sweep INTEGER NOT NULL DEFAULT 0,
+            manual_review_required INTEGER NOT NULL DEFAULT 0,
+            pack_id TEXT NOT NULL DEFAULT '',
+            pack_size INTEGER NOT NULL DEFAULT 0,
+            pack_cost_rub REAL,
+            pack_floor_after_rub REAL,
+            capital_required_rub REAL,
+            substitute_floor_rub REAL,
+            substitute_cap_rub REAL,
+            raw_anomaly_score REAL,
+            risk_adjusted_score REAL,
             parsed_at TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'new',
             created_at TEXT NOT NULL,
@@ -321,6 +343,10 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "scan_optimization_config": ParserSettings().scan_optimization_config,
         "history_optimization_config": ParserSettings().history_optimization_config,
         "steam_guard_config": ParserSettings().steam_guard_config,
+        "market_risk_config": ParserSettings().market_risk_config,
+        "pack_detection_config": ParserSettings().pack_detection_config,
+        "capital_config": ParserSettings().capital_config,
+        "craft_context_config": ParserSettings().craft_context_config,
     }
     settings_columns = _table_columns(connection, "settings")
     for column, default_value in settings_defaults.items():
@@ -407,6 +433,24 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "sample_size": "INTEGER NOT NULL DEFAULT 0",
         "neighbor_count": "INTEGER NOT NULL DEFAULT 0",
         "anomaly_reasons": "TEXT NOT NULL DEFAULT ''",
+        "anomaly_baseline_price_rub": "REAL",
+        "exit_price_rub": "REAL",
+        "exit_price_model": "TEXT NOT NULL DEFAULT ''",
+        "solo_exit_price_rub": "REAL",
+        "sweep_exit_price_rub": "REAL",
+        "market_confidence": "TEXT NOT NULL DEFAULT ''",
+        "liquidity_score": "REAL",
+        "requires_sweep": "INTEGER NOT NULL DEFAULT 0",
+        "manual_review_required": "INTEGER NOT NULL DEFAULT 0",
+        "pack_id": "TEXT NOT NULL DEFAULT ''",
+        "pack_size": "INTEGER NOT NULL DEFAULT 0",
+        "pack_cost_rub": "REAL",
+        "pack_floor_after_rub": "REAL",
+        "capital_required_rub": "REAL",
+        "substitute_floor_rub": "REAL",
+        "substitute_cap_rub": "REAL",
+        "raw_anomaly_score": "REAL",
+        "risk_adjusted_score": "REAL",
         "parsed_at": "TEXT NOT NULL DEFAULT ''",
     }
     for column, definition in candidate_defaults.items():
@@ -416,6 +460,12 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_candidates_anomaly
             ON candidates(anomaly_score, float_bucket, estimated_profit_rub)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_candidates_risk
+            ON candidates(requires_sweep, market_confidence, manual_review_required, risk_adjusted_score)
         """
     )
     baseline_columns = _table_columns(connection, "market_baseline")
@@ -478,6 +528,10 @@ def _apply_safe_settings_profile_once(connection: sqlite3.Connection) -> None:
             scan_optimization_config = ?,
             history_optimization_config = ?,
             steam_guard_config = ?,
+            market_risk_config = ?,
+            pack_detection_config = ?,
+            capital_config = ?,
+            craft_context_config = ?,
             updated_at = ?
         WHERE id = 1
         """,
@@ -488,6 +542,10 @@ def _apply_safe_settings_profile_once(connection: sqlite3.Connection) -> None:
             settings.scan_optimization_config,
             settings.history_optimization_config,
             settings.steam_guard_config,
+            settings.market_risk_config,
+            settings.pack_detection_config,
+            settings.capital_config,
+            settings.craft_context_config,
             now,
         ),
     )
@@ -534,6 +592,7 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             default_min_roi_percent, selected_exteriors, anomaly_config,
             telegram_config, scan_queue_config, browser_optimization_config,
             scan_optimization_config, history_optimization_config, steam_guard_config,
+            market_risk_config, pack_detection_config, capital_config, craft_context_config,
             updated_at
         )
         VALUES (
@@ -545,6 +604,7 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             :default_min_roi_percent, :selected_exteriors, :anomaly_config,
             :telegram_config, :scan_queue_config, :browser_optimization_config,
             :scan_optimization_config, :history_optimization_config, :steam_guard_config,
+            :market_risk_config, :pack_detection_config, :capital_config, :craft_context_config,
             :updated_at
         )
         """,
@@ -574,6 +634,10 @@ def ensure_default_settings(connection: sqlite3.Connection) -> None:
             "scan_optimization_config": settings.scan_optimization_config,
             "history_optimization_config": settings.history_optimization_config,
             "steam_guard_config": settings.steam_guard_config,
+            "market_risk_config": settings.market_risk_config,
+            "pack_detection_config": settings.pack_detection_config,
+            "capital_config": settings.capital_config,
+            "craft_context_config": settings.craft_context_config,
             "updated_at": settings.updated_at,
         },
     )

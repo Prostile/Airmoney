@@ -9,10 +9,14 @@ from typing import Any
 from airmoney.config.models import (
     AnomalySettings,
     BrowserOptimizationSettings,
+    CapitalSettings,
     Collection,
+    CraftContextSettings,
     EXTERIORS,
     HistoryOptimizationSettings,
     ItemDefinition,
+    MarketRiskSettings,
+    PackDetectionSettings,
     ParserSettings,
     ScanOptimizationSettings,
     ScanQueueSettings,
@@ -100,6 +104,10 @@ def export_config(repo: Repository) -> str:
         "scan_optimization": settings.scan_optimization_settings.to_dict(),
         "history_optimization": settings.history_optimization_settings.to_dict(),
         "steam_guard": settings.steam_guard_settings.to_dict(),
+        "market_risk": settings.market_risk_settings.to_dict(),
+        "pack_detection": settings.pack_detection_settings.to_dict(),
+        "capital": settings.capital_settings.to_dict(),
+        "craft_context": settings.craft_context_settings.to_dict(),
         "telegram": {
             "enabled": settings.telegram_alerts_enabled,
             "min_alert_level": settings.telegram_min_alert_level,
@@ -210,6 +218,10 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
     scan_optimization = _section(data, "scan_optimization", errors)
     history_optimization = _section(data, "history_optimization", errors)
     steam_guard = _section(data, "steam_guard", errors)
+    market_risk = _section(data, "market_risk", errors)
+    pack_detection = _section(data, "pack_detection", errors)
+    capital = _section(data, "capital", errors)
+    craft_context = _section(data, "craft_context", errors)
     settings = ParserSettings()
     settings.enabled = to_bool(parser.get("enabled", settings.enabled))
     settings.check_interval_seconds = _positive_int(parser.get("check_interval_seconds", settings.check_interval_seconds), "parser.check_interval_seconds", errors)
@@ -244,6 +256,10 @@ def _parse_settings(data: dict[str, Any], errors: list[str]) -> ParserSettings:
     settings.set_scan_optimization_settings(_parse_scan_optimization(scan_optimization, errors))
     settings.set_history_optimization_settings(_parse_history_optimization(history_optimization, errors))
     settings.set_steam_guard_settings(_parse_steam_guard(steam_guard, errors))
+    settings.set_market_risk_settings(_parse_market_risk(market_risk, errors))
+    settings.set_pack_detection_settings(_parse_pack_detection(pack_detection, errors))
+    settings.set_capital_settings(_parse_capital(capital, errors))
+    settings.set_craft_context_settings(_parse_craft_context(craft_context, errors))
     telegram_settings = _parse_telegram_alert_settings(telegram, errors)
     settings.set_telegram_alert_settings(telegram_settings)
     settings.updated_at = utc_now_iso()
@@ -318,6 +334,37 @@ def _parse_steam_guard(data: dict[str, Any], errors: list[str]) -> SteamGuardSet
     if settings.max_cooldown_seconds < settings.cooldown_on_limit_seconds:
         errors.append("steam_guard.max_cooldown_seconds must be >= cooldown_on_limit_seconds.")
     return settings
+
+
+def _parse_market_risk(data: dict[str, Any], errors: list[str]) -> MarketRiskSettings:
+    settings = MarketRiskSettings.from_dict(data)
+    allowed_levels = {"skip", "watch", "good", "critical"}
+    if settings.thin_market_max_level not in allowed_levels:
+        errors.append("market_risk.thin_market_max_level must be skip/watch/good/critical.")
+    if settings.very_thin_market_max_level not in allowed_levels:
+        errors.append("market_risk.very_thin_market_max_level must be skip/watch/good/critical.")
+    if settings.sweep_max_level_without_capital not in allowed_levels:
+        errors.append("market_risk.sweep_max_level_without_capital must be skip/watch/good/critical.")
+    if settings.min_sample_for_critical < settings.min_sample_for_good:
+        errors.append("market_risk.min_sample_for_critical must be >= min_sample_for_good.")
+    if settings.min_neighbor_for_critical < settings.min_neighbor_for_good:
+        errors.append("market_risk.min_neighbor_for_critical must be >= min_neighbor_for_good.")
+    return settings
+
+
+def _parse_pack_detection(data: dict[str, Any], errors: list[str]) -> PackDetectionSettings:
+    settings = PackDetectionSettings.from_dict(data)
+    if settings.max_pack_size < settings.min_pack_size:
+        errors.append("pack_detection.max_pack_size must be >= min_pack_size.")
+    return settings
+
+
+def _parse_capital(data: dict[str, Any], errors: list[str]) -> CapitalSettings:
+    return CapitalSettings.from_dict(data)
+
+
+def _parse_craft_context(data: dict[str, Any], errors: list[str]) -> CraftContextSettings:
+    return CraftContextSettings.from_dict(data)
 
 
 def _parse_telegram_alert_settings(data: dict[str, Any], errors: list[str]) -> TelegramAlertSettings:

@@ -187,6 +187,10 @@ class Repository:
                 data.get("history_optimization_config") or ParserSettings().history_optimization_config
             ),
             steam_guard_config=data.get("steam_guard_config") or ParserSettings().steam_guard_config,
+            market_risk_config=data.get("market_risk_config") or ParserSettings().market_risk_config,
+            pack_detection_config=data.get("pack_detection_config") or ParserSettings().pack_detection_config,
+            capital_config=data.get("capital_config") or ParserSettings().capital_config,
+            craft_context_config=data.get("craft_context_config") or ParserSettings().craft_context_config,
             updated_at=data["updated_at"],
         )
 
@@ -221,6 +225,10 @@ class Repository:
                     scan_optimization_config = :scan_optimization_config,
                     history_optimization_config = :history_optimization_config,
                     steam_guard_config = :steam_guard_config,
+                    market_risk_config = :market_risk_config,
+                    pack_detection_config = :pack_detection_config,
+                    capital_config = :capital_config,
+                    craft_context_config = :craft_context_config,
                     updated_at = :updated_at
                 WHERE id = 1
                 """,
@@ -793,75 +801,99 @@ class Repository:
             )
 
     def save_candidate(self, candidate: Candidate) -> None:
-        candidate.updated_at = utc_now_iso()
         with self.connection() as connection:
-            existing = connection.execute(
-                "SELECT created_at, status FROM candidates WHERE listing_id = ?",
-                (candidate.listing_id,),
-            ).fetchone()
-            if existing:
-                candidate.created_at = existing["created_at"]
-                if existing["status"] != "new":
-                    candidate.status = existing["status"]
-            connection.execute(
-                """
-                INSERT INTO candidates (
-                    id, listing_id, rule_id, buy_price_rub, estimated_resale_price_rub,
-                    estimated_net_resale_rub, estimated_profit_rub,
-                    estimated_roi_percent, market_fee_percent, recommendation_level,
-                    recommendation_score, recommendation_reason, analysis_mode,
-                    alert_level, anomaly_score, fair_price_rub, local_median_rub,
-                    float_peer_median_rub, historical_baseline_rub,
-                    local_discount_percent, float_peer_discount_percent,
-                    historical_discount_percent, robust_z, float_bucket,
-                    exact_item_match, sample_size, neighbor_count,
-                    anomaly_reasons, parsed_at, status, created_at, updated_at
-                )
-                VALUES (
-                    :id, :listing_id, :rule_id, :buy_price_rub, :estimated_resale_price_rub,
-                    :estimated_net_resale_rub, :estimated_profit_rub,
-                    :estimated_roi_percent, :market_fee_percent, :recommendation_level,
-                    :recommendation_score, :recommendation_reason, :analysis_mode,
-                    :alert_level, :anomaly_score, :fair_price_rub, :local_median_rub,
-                    :float_peer_median_rub, :historical_baseline_rub,
-                    :local_discount_percent, :float_peer_discount_percent,
-                    :historical_discount_percent, :robust_z, :float_bucket,
-                    :exact_item_match, :sample_size, :neighbor_count,
-                    :anomaly_reasons, :parsed_at, :status, :created_at, :updated_at
-                )
-                ON CONFLICT(listing_id) DO UPDATE SET
-                    rule_id = excluded.rule_id,
-                    buy_price_rub = excluded.buy_price_rub,
-                    estimated_resale_price_rub = excluded.estimated_resale_price_rub,
-                    estimated_net_resale_rub = excluded.estimated_net_resale_rub,
-                    estimated_profit_rub = excluded.estimated_profit_rub,
-                    estimated_roi_percent = excluded.estimated_roi_percent,
-                    market_fee_percent = excluded.market_fee_percent,
-                    recommendation_level = excluded.recommendation_level,
-                    recommendation_score = excluded.recommendation_score,
-                    recommendation_reason = excluded.recommendation_reason,
-                    analysis_mode = excluded.analysis_mode,
-                    alert_level = excluded.alert_level,
-                    anomaly_score = excluded.anomaly_score,
-                    fair_price_rub = excluded.fair_price_rub,
-                    local_median_rub = excluded.local_median_rub,
-                    float_peer_median_rub = excluded.float_peer_median_rub,
-                    historical_baseline_rub = excluded.historical_baseline_rub,
-                    local_discount_percent = excluded.local_discount_percent,
-                    float_peer_discount_percent = excluded.float_peer_discount_percent,
-                    historical_discount_percent = excluded.historical_discount_percent,
-                    robust_z = excluded.robust_z,
-                    float_bucket = excluded.float_bucket,
-                    exact_item_match = excluded.exact_item_match,
-                    sample_size = excluded.sample_size,
-                    neighbor_count = excluded.neighbor_count,
-                    anomaly_reasons = excluded.anomaly_reasons,
-                    parsed_at = excluded.parsed_at,
-                    status = excluded.status,
-                    updated_at = excluded.updated_at
-                """,
-                asdict(candidate),
+            self._upsert_candidate_in_connection(connection, candidate)
+
+    def _upsert_candidate_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        candidate: Candidate,
+        now: str | None = None,
+    ) -> None:
+        candidate.updated_at = now or utc_now_iso()
+        existing = connection.execute(
+            "SELECT created_at, status FROM candidates WHERE listing_id = ?",
+            (candidate.listing_id,),
+        ).fetchone()
+        if existing:
+            candidate.created_at = existing["created_at"]
+            if existing["status"] != "new":
+                candidate.status = existing["status"]
+        params = asdict(candidate)
+        params["exact_item_match"] = int(candidate.exact_item_match)
+        params["requires_sweep"] = int(candidate.requires_sweep)
+        params["manual_review_required"] = int(candidate.manual_review_required)
+        columns = [
+            "id",
+            "listing_id",
+            "rule_id",
+            "buy_price_rub",
+            "estimated_resale_price_rub",
+            "estimated_net_resale_rub",
+            "estimated_profit_rub",
+            "estimated_roi_percent",
+            "market_fee_percent",
+            "recommendation_level",
+            "recommendation_score",
+            "recommendation_reason",
+            "analysis_mode",
+            "alert_level",
+            "anomaly_score",
+            "fair_price_rub",
+            "local_median_rub",
+            "float_peer_median_rub",
+            "historical_baseline_rub",
+            "local_discount_percent",
+            "float_peer_discount_percent",
+            "historical_discount_percent",
+            "robust_z",
+            "float_bucket",
+            "exact_item_match",
+            "sample_size",
+            "neighbor_count",
+            "anomaly_reasons",
+            "anomaly_baseline_price_rub",
+            "exit_price_rub",
+            "exit_price_model",
+            "solo_exit_price_rub",
+            "sweep_exit_price_rub",
+            "market_confidence",
+            "liquidity_score",
+            "requires_sweep",
+            "manual_review_required",
+            "pack_id",
+            "pack_size",
+            "pack_cost_rub",
+            "pack_floor_after_rub",
+            "capital_required_rub",
+            "substitute_floor_rub",
+            "substitute_cap_rub",
+            "raw_anomaly_score",
+            "risk_adjusted_score",
+            "parsed_at",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+        placeholders = ", ".join(f":{column}" for column in columns)
+        assignments = ",\n                    ".join(
+            f"{column} = excluded.{column}"
+            for column in columns
+            if column not in {"id", "listing_id", "created_at"}
+        )
+        connection.execute(
+            f"""
+            INSERT INTO candidates (
+                {", ".join(columns)}
             )
+            VALUES (
+                {placeholders}
+            )
+            ON CONFLICT(listing_id) DO UPDATE SET
+                    {assignments}
+            """,
+            params,
+        )
 
     def save_item_scan_success(
         self,
@@ -924,74 +956,7 @@ class Repository:
                     },
                 )
             for candidate in candidates:
-                candidate.updated_at = now
-                existing = connection.execute(
-                    "SELECT created_at, status FROM candidates WHERE listing_id = ?",
-                    (candidate.listing_id,),
-                ).fetchone()
-                if existing:
-                    candidate.created_at = existing["created_at"]
-                    if existing["status"] != "new":
-                        candidate.status = existing["status"]
-                connection.execute(
-                    """
-                    INSERT INTO candidates (
-                        id, listing_id, rule_id, buy_price_rub, estimated_resale_price_rub,
-                        estimated_net_resale_rub, estimated_profit_rub,
-                        estimated_roi_percent, market_fee_percent, recommendation_level,
-                        recommendation_score, recommendation_reason, analysis_mode,
-                        alert_level, anomaly_score, fair_price_rub, local_median_rub,
-                        float_peer_median_rub, historical_baseline_rub,
-                        local_discount_percent, float_peer_discount_percent,
-                        historical_discount_percent, robust_z, float_bucket,
-                        exact_item_match, sample_size, neighbor_count,
-                        anomaly_reasons, parsed_at, status, created_at, updated_at
-                    )
-                    VALUES (
-                        :id, :listing_id, :rule_id, :buy_price_rub, :estimated_resale_price_rub,
-                        :estimated_net_resale_rub, :estimated_profit_rub,
-                        :estimated_roi_percent, :market_fee_percent, :recommendation_level,
-                        :recommendation_score, :recommendation_reason, :analysis_mode,
-                        :alert_level, :anomaly_score, :fair_price_rub, :local_median_rub,
-                        :float_peer_median_rub, :historical_baseline_rub,
-                        :local_discount_percent, :float_peer_discount_percent,
-                        :historical_discount_percent, :robust_z, :float_bucket,
-                        :exact_item_match, :sample_size, :neighbor_count,
-                        :anomaly_reasons, :parsed_at, :status, :created_at, :updated_at
-                    )
-                    ON CONFLICT(listing_id) DO UPDATE SET
-                        rule_id = excluded.rule_id,
-                        buy_price_rub = excluded.buy_price_rub,
-                        estimated_resale_price_rub = excluded.estimated_resale_price_rub,
-                        estimated_net_resale_rub = excluded.estimated_net_resale_rub,
-                        estimated_profit_rub = excluded.estimated_profit_rub,
-                        estimated_roi_percent = excluded.estimated_roi_percent,
-                        market_fee_percent = excluded.market_fee_percent,
-                        recommendation_level = excluded.recommendation_level,
-                        recommendation_score = excluded.recommendation_score,
-                        recommendation_reason = excluded.recommendation_reason,
-                        analysis_mode = excluded.analysis_mode,
-                        alert_level = excluded.alert_level,
-                        anomaly_score = excluded.anomaly_score,
-                        fair_price_rub = excluded.fair_price_rub,
-                        local_median_rub = excluded.local_median_rub,
-                        float_peer_median_rub = excluded.float_peer_median_rub,
-                        historical_baseline_rub = excluded.historical_baseline_rub,
-                        local_discount_percent = excluded.local_discount_percent,
-                        float_peer_discount_percent = excluded.float_peer_discount_percent,
-                        historical_discount_percent = excluded.historical_discount_percent,
-                        robust_z = excluded.robust_z,
-                        float_bucket = excluded.float_bucket,
-                        exact_item_match = excluded.exact_item_match,
-                        sample_size = excluded.sample_size,
-                        neighbor_count = excluded.neighbor_count,
-                        anomaly_reasons = excluded.anomaly_reasons,
-                        parsed_at = excluded.parsed_at,
-                        status = excluded.status,
-                        updated_at = excluded.updated_at
-                    """,
-                    asdict(candidate),
-                )
+                self._upsert_candidate_in_connection(connection, candidate, now=now)
             current_listing_ids = {listing.id for listing in listings}
             analyzed_listing_ids = {candidate.listing_id for candidate in candidates}
             stale_candidate_listing_ids = sorted(current_listing_ids - analyzed_listing_ids)
@@ -1098,7 +1063,12 @@ class Repository:
         min_profit: float | None = None,
         min_roi: float | None = None,
         min_score: float | None = None,
+        min_risk_adjusted_score: float | None = None,
         float_bucket: str | None = None,
+        requires_sweep: bool | None = None,
+        market_confidence: str | None = None,
+        manual_review_required: bool | None = None,
+        max_capital_required: float | None = None,
         souvenir_only: bool = False,
         exact_item_only: bool = False,
         date_from: str | None = None,
@@ -1129,11 +1099,26 @@ class Repository:
             clauses.append("c.estimated_roi_percent >= ?")
             params.append(min_roi)
         if min_score is not None:
-            clauses.append("COALESCE(c.anomaly_score, c.recommendation_score) >= ?")
+            clauses.append("COALESCE(c.risk_adjusted_score, c.anomaly_score, c.recommendation_score) >= ?")
             params.append(min_score)
+        if min_risk_adjusted_score is not None:
+            clauses.append("COALESCE(c.risk_adjusted_score, c.anomaly_score, c.recommendation_score) >= ?")
+            params.append(min_risk_adjusted_score)
         if float_bucket:
             clauses.append("c.float_bucket = ?")
             params.append(float_bucket)
+        if requires_sweep is not None:
+            clauses.append("c.requires_sweep = ?")
+            params.append(int(requires_sweep))
+        if market_confidence:
+            clauses.append("c.market_confidence = ?")
+            params.append(market_confidence)
+        if manual_review_required is not None:
+            clauses.append("c.manual_review_required = ?")
+            params.append(int(manual_review_required))
+        if max_capital_required is not None:
+            clauses.append("(c.capital_required_rub IS NULL OR c.capital_required_rub <= ?)")
+            params.append(max_capital_required)
         if souvenir_only:
             clauses.append("i.is_souvenir = 1")
         if exact_item_only:
@@ -1149,7 +1134,9 @@ class Repository:
             "profit": "c.estimated_profit_rub DESC",
             "roi": "c.estimated_roi_percent DESC",
             "price": "c.buy_price_rub ASC",
-            "score": "COALESCE(c.anomaly_score, c.recommendation_score) DESC",
+            "score": "COALESCE(c.risk_adjusted_score, c.anomaly_score, c.recommendation_score) DESC",
+            "risk_score": "COALESCE(c.risk_adjusted_score, c.anomaly_score, c.recommendation_score) DESC",
+            "capital": "COALESCE(c.capital_required_rub, c.buy_price_rub) ASC",
             "level": "CASE c.recommendation_level WHEN 'critical' THEN 1 WHEN 'good' THEN 2 WHEN 'watch' THEN 3 ELSE 4 END",
             "time": "c.created_at DESC",
         }.get(sort, "c.created_at DESC")
@@ -1283,6 +1270,58 @@ class Repository:
                 (item_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def substitute_price_context(
+        self,
+        item: dict[str, Any],
+        target_float_max: float,
+        premium_multiplier: float,
+        min_sample: int = 3,
+        same_collection_same_rarity: bool = True,
+    ) -> dict[str, Any]:
+        clauses = [
+            "ml.is_active = 1",
+            "i.id != ?",
+            "i.collection_id = ?",
+            "i.exterior = ?",
+            "i.is_souvenir = ?",
+            "ml.float_value IS NOT NULL",
+            "ml.float_value <= ?",
+            "ml.buy_price_rub > 0",
+        ]
+        params: list[Any] = [
+            item.get("id"),
+            item.get("collection_id"),
+            item.get("exterior") or "",
+            int(bool(item.get("is_souvenir"))),
+            target_float_max,
+        ]
+        if same_collection_same_rarity and str(item.get("rarity") or "").strip():
+            clauses.append("i.rarity = ?")
+            params.append(str(item.get("rarity") or ""))
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT ml.buy_price_rub
+                FROM market_listings ml
+                JOIN items i ON i.id = ml.item_definition_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY ml.buy_price_rub ASC
+                """,
+                params,
+            ).fetchall()
+        prices = [float(row["buy_price_rub"]) for row in rows if row["buy_price_rub"] is not None]
+        sample_size = len(prices)
+        if not prices:
+            return {"floor_rub": None, "median_rub": None, "sample_size": 0, "cap_rub": None}
+        floor = min(prices)
+        cap = round(floor * premium_multiplier, 2) if sample_size >= min_sample else None
+        return {
+            "floor_rub": round(floor, 2),
+            "median_rub": round(float(median(prices)), 2),
+            "sample_size": sample_size,
+            "cap_rub": cap,
+        }
 
     def list_market_snapshots(self, item_id: str, limit: int = 30) -> list[dict[str, Any]]:
         with self.connection() as connection:
@@ -1514,7 +1553,7 @@ class Repository:
                   AND c.recommendation_level IN ('critical', 'good', 'watch')
                   AND COALESCE(r.telegram_alert_enabled, 1) = 1
                   AND ta.id IS NULL
-                ORDER BY c.recommendation_score DESC, c.created_at DESC
+                ORDER BY COALESCE(c.risk_adjusted_score, c.recommendation_score) DESC, c.created_at DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -1602,6 +1641,14 @@ class Repository:
         if consecutive_blocks is not None:
             values["steam_consecutive_blocks"] = int(consecutive_blocks)
         self.set_app_state(values)
+
+    def reset_steam_guard_state(self) -> None:
+        self.set_steam_guard_state(
+            cooldown_until="",
+            reason="",
+            consecutive_blocks=0,
+            last_error_at="",
+        )
 
     def start_scan_run(
         self,

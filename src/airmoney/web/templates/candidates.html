@@ -83,6 +83,39 @@
           <label class="form-label">Score от</label>
           <input class="form-control" type="number" step="0.01" name="min_score" value="{{ filters.min_score or '' }}">
         </div>
+        <div class="col-12 col-md-3 col-xl-2">
+          <label class="form-label">Risk score from</label>
+          <input class="form-control" type="number" step="0.01" name="min_risk_adjusted_score" value="{{ filters.min_risk_adjusted_score or '' }}">
+        </div>
+        <div class="col-12 col-md-4 col-xl-2">
+          <label class="form-label">Confidence</label>
+          <select class="form-select" name="market_confidence">
+            <option value="">Any</option>
+            {% for confidence in ["high", "medium", "low", "very_low"] %}
+            <option value="{{ confidence }}" {% if filters.market_confidence == confidence %}selected{% endif %}>{{ confidence }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-xl-2">
+          <label class="form-label">Requires sweep</label>
+          <select class="form-select" name="requires_sweep">
+            <option value="">Any</option>
+            <option value="true" {% if filters.requires_sweep == "true" %}selected{% endif %}>yes</option>
+            <option value="false" {% if filters.requires_sweep == "false" %}selected{% endif %}>no</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-xl-2">
+          <label class="form-label">Manual review</label>
+          <select class="form-select" name="manual_review_required">
+            <option value="">Any</option>
+            <option value="true" {% if filters.manual_review_required == "true" %}selected{% endif %}>yes</option>
+            <option value="false" {% if filters.manual_review_required == "false" %}selected{% endif %}>no</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-3 col-xl-2">
+          <label class="form-label">Max capital</label>
+          <input class="form-control" type="number" step="0.01" name="max_capital_required" value="{{ filters.max_capital_required or '' }}">
+        </div>
         <div class="col-12 col-md-4 col-xl-2">
           <label class="form-label">Float bucket</label>
           <select class="form-select" name="float_bucket">
@@ -103,7 +136,7 @@
         <div class="col-12 col-md-4 col-xl-2">
           <label class="form-label">Сортировка</label>
           <select class="form-select" name="sort">
-            {% for option in ["time", "score", "profit", "roi", "price", "level"] %}
+            {% for option in ["time", "score", "risk_score", "profit", "roi", "price", "capital", "level"] %}
             <option value="{{ option }}" {% if filters.sort == option %}selected{% endif %}>{{ option }}</option>
             {% endfor %}
           </select>
@@ -144,11 +177,12 @@
           <th>Статус</th>
           <th>Уровень</th>
           <th>Score</th>
+          <th>Risk</th>
           <th>Скин</th>
           <th>Коллекция</th>
           <th>Правило</th>
           <th>Покупка</th>
-          <th>Продажа</th>
+          <th>Exit</th>
           <th>Чистыми</th>
           <th>Профит</th>
           <th>ROI</th>
@@ -173,7 +207,11 @@
             <div class="text-secondary small mt-1">{{ row.analysis_mode or 'legacy' }}</div>
             <div class="text-secondary small mt-1">{{ "exact" if row.exact_item_match else "compatible" }}</div>
           </td>
-          <td>{{ "%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score) }}</td>
+          <td>{{ "%.1f"|format(row.risk_adjusted_score) if row.risk_adjusted_score is not none else ("%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score)) }}</td>
+          <td>
+            <div>{{ row.market_confidence or '-' }}</div>
+            <div class="text-secondary small">{{ "sweep" if row.requires_sweep else "solo" }}{% if row.manual_review_required %} / manual{% endif %}</div>
+          </td>
           <td class="fw-semibold">
             {{ row.skin_name }}
             <div class="text-secondary small mt-1">{{ row.anomaly_reasons or row.recommendation_reason }}</div>
@@ -181,7 +219,11 @@
           <td class="text-secondary">{{ row.collection_name }}</td>
           <td class="text-secondary">{{ row.rule_id or '-' }}</td>
           <td>{{ "%.2f"|format(row.buy_price_rub) }}</td>
-          <td>{{ "%.2f"|format(row.estimated_resale_price_rub) }}</td>
+          <td>
+            <div>{{ "%.2f"|format(row.exit_price_rub) if row.exit_price_rub is not none else "%.2f"|format(row.estimated_resale_price_rub) }}</div>
+            <div class="text-secondary small">solo {{ "%.2f"|format(row.solo_exit_price_rub) if row.solo_exit_price_rub is not none else '-' }}</div>
+            <div class="text-secondary small">sweep {{ "%.2f"|format(row.sweep_exit_price_rub) if row.sweep_exit_price_rub is not none else '-' }}</div>
+          </td>
           <td>{{ "%.2f"|format(row.estimated_net_resale_rub) }}</td>
           <td class="{{ 'profit-positive' if row.estimated_profit_rub > 0 else 'profit-negative' }}">{{ "%.2f"|format(row.estimated_profit_rub) }}</td>
           <td>{{ "%.2f"|format(row.estimated_roi_percent) }}%</td>
@@ -193,6 +235,9 @@
             <div class="text-secondary small">Local: {{ "%.2f"|format(row.local_median_rub) if row.local_median_rub is not none else '-' }}</div>
             <div class="text-secondary small">Float: {{ "%.2f"|format(row.float_peer_median_rub) if row.float_peer_median_rub is not none else '-' }}</div>
             <div class="text-secondary small">Hist: {{ "%.2f"|format(row.historical_baseline_rub) if row.historical_baseline_rub is not none else '-' }}</div>
+            <div class="text-secondary small">Sub cap: {{ "%.2f"|format(row.substitute_cap_rub) if row.substitute_cap_rub is not none else '-' }}</div>
+            <div class="text-secondary small">Pack: {{ row.pack_size or 0 }} / {{ "%.2f"|format(row.pack_cost_rub) if row.pack_cost_rub is not none else '-' }}</div>
+            <div class="text-secondary small">Capital: {{ "%.2f"|format(row.capital_required_rub) if row.capital_required_rub is not none else '-' }}</div>
           </td>
           <td>
             <div>Local: {{ "%.1f"|format(row.local_discount_percent) ~ '%' if row.local_discount_percent is not none else '-' }}</div>
@@ -223,5 +268,6 @@
       </tbody>
     </table>
   </div>
+  {% include "components/pagination.html" %}
 </section>
 {% endblock %}

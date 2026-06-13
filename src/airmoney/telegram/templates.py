@@ -29,6 +29,8 @@ def format_float(value) -> str:
 
 
 def resolve_display_baseline(candidate: dict) -> tuple[str, float | None]:
+    if candidate.get("exit_price_rub") is not None:
+        return "Exit", _to_float(candidate.get("exit_price_rub"))
     if candidate.get("historical_baseline_rub") is not None:
         return "Hist", _to_float(candidate.get("historical_baseline_rub"))
     if candidate.get("float_peer_median_rub") is not None:
@@ -81,6 +83,18 @@ def candidate_alert(
         lines.append(
             f"Sample: {candidate.get('sample_size') or 0} / nn {candidate.get('neighbor_count') or 0}"
         )
+    if candidate.get("market_confidence"):
+        lines.append(f"Conf: {candidate.get('market_confidence')}")
+    if candidate.get("requires_sweep"):
+        lines.append(
+            "Sweep: yes"
+            f" / pack {candidate.get('pack_size') or 0}"
+            f" / capital {format_money(candidate.get('capital_required_rub'))}"
+        )
+    elif candidate.get("pack_id"):
+        lines.append(f"Pack: {candidate.get('pack_size') or 0} near-floor listings")
+    if candidate.get("manual_review_required"):
+        lines.append("Manual review: yes")
     if include_reasons:
         reasons = _reason_lines(candidate)
         if reasons:
@@ -114,9 +128,35 @@ def batch_alert(candidates: list[dict], dashboard_url: str) -> str:
     return "\n".join(lines).strip()
 
 
+def pack_alert(candidates: list[dict], dashboard_url: str) -> str:
+    first = candidates[0]
+    title = first.get("skin_name") or first.get("display_name") or "-"
+    pack_size = first.get("pack_size") or len(candidates)
+    lines = [
+        f"[PACK] {title}",
+        "",
+        f"Level: {str(first.get('recommendation_level') or 'watch').upper()}",
+        f"Pack size: {pack_size}",
+        f"Pack cost: {format_money(first.get('pack_cost_rub'))}",
+        f"Next floor: {format_money(first.get('pack_floor_after_rub'))}",
+        f"Capital: {format_money(first.get('capital_required_rub'))}",
+        f"Conf: {first.get('market_confidence') or '-'}",
+        "",
+    ]
+    for index, candidate in enumerate(candidates[:8], start=1):
+        lines.append(
+            f"{index}. buy {format_money(candidate.get('buy_price_rub'))} / "
+            f"exit {format_money(candidate.get('exit_price_rub') or candidate.get('estimated_resale_price_rub'))} / "
+            f"fl {format_float(candidate.get('float_value'))}"
+        )
+    lines.extend(["", f"Dashboard: {dashboard_url}"])
+    return "\n".join(lines).strip()
+
+
 def should_send_immediate(candidate: dict) -> bool:
     return (
         candidate.get("recommendation_level") == "critical"
+        and not candidate.get("manual_review_required")
         and (_to_float(candidate.get("estimated_profit_rub")) or 0) >= 300
         and (_to_float(candidate.get("estimated_roi_percent")) or 0) >= 20
     )

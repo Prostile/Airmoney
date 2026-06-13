@@ -41,6 +41,8 @@ class BaselineResult:
 class AnomalyResult:
     listing: ParsedListing
     fair_price_rub: float | None
+    exit_price_rub: float | None
+    anomaly_baseline_price_rub: float | None
     local_median_rub: float | None
     float_peer_median_rub: float | None
     historical_baseline_rub: float | None
@@ -50,8 +52,24 @@ class AnomalyResult:
     net_resale_rub: float | None
     net_profit_rub: float | None
     roi_percent: float | None
+    raw_anomaly_score: float
+    risk_adjusted_score: float
     anomaly_score: float
     alert_level: str
+    market_confidence: str = ""
+    requires_sweep: bool = False
+    pack_id: str = ""
+    pack_size: int = 0
+    pack_cost_rub: float | None = None
+    pack_floor_after_rub: float | None = None
+    capital_required_rub: float | None = None
+    substitute_floor_rub: float | None = None
+    substitute_cap_rub: float | None = None
+    solo_exit_price_rub: float | None = None
+    sweep_exit_price_rub: float | None = None
+    exit_price_model: str = ""
+    liquidity_score: float | None = None
+    manual_review_required: bool = False
     reasons: list[str] = field(default_factory=list)
     robust_z: float | None = None
     float_bucket: str | None = None

@@ -9,7 +9,7 @@ from pathlib import Path
 from airmoney.config.models import ParserSettings, parse_dt, utc_now
 from airmoney.recommendation.scoring import should_alert
 from airmoney.storage.repositories import Repository
-from airmoney.telegram.templates import batch_alert, candidate_alert, should_send_immediate
+from airmoney.telegram.templates import batch_alert, candidate_alert, pack_alert, should_send_immediate
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -78,13 +78,36 @@ class TelegramNotifier:
         sent = 0
         rates = self.repo.latest_currency_rate()
         alert_settings = settings.telegram_alert_settings
-        batch_candidates: list[dict] = []
+        pack_settings = settings.pack_detection_settings
+        candidates: list[dict] = []
         for candidate in self.repo.list_unsent_alert_candidates(limit=limit):
             if not should_alert(candidate["recommendation_level"], settings.telegram_min_alert_level):
                 continue
             if rates:
                 candidate["currency_rate_source"] = candidate.get("currency_source") or rates["source"]
                 candidate["currency_fetched_at"] = candidate.get("currency_fetched_at") or rates["fetched_at"]
+            candidates.append(candidate)
+
+        pack_groups: dict[str, list[dict]] = {}
+        single_candidates: list[dict] = []
+        for candidate in candidates:
+            pack_id = str(candidate.get("pack_id") or "")
+            if pack_settings.enabled and pack_settings.alert_as_single_pack and pack_id:
+                pack_groups.setdefault(pack_id, []).append(candidate)
+            else:
+                single_candidates.append(candidate)
+
+        for group in pack_groups.values():
+            ok, error = send_telegram_message(
+                pack_alert(group, f"{self.site_url}/candidates")[: alert_settings.max_message_length]
+            )
+            for candidate in group:
+                self.repo.log_telegram_alert(candidate["id"], "sent" if ok else "error", error)
+            if ok:
+                sent += len(group)
+
+        batch_candidates: list[dict] = []
+        for candidate in single_candidates:
             if alert_settings.batch_alerts and not should_send_immediate(candidate):
                 batch_candidates.append(candidate)
                 continue

@@ -9,6 +9,8 @@
   </div>
 </section>
 
+<form id="steam-guard-reset" method="post" action="/settings/steam-guard/reset"></form>
+
 <form method="post" action="/settings">
   <div class="row row-cards">
     <div class="col-12">
@@ -53,6 +55,7 @@
             <div class="col-12 col-md-4">
               <label class="form-label">Лимит таблицы</label>
               <input class="form-control" type="number" name="web_table_limit" value="{{ settings.web_table_limit }}" min="10">
+              <div class="form-hint">Paged tabs use 100 rows per page.</div>
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Мин. уровень Telegram</label>
@@ -109,9 +112,64 @@
 
     <div class="col-12">
       <div class="card form-card">
+        <div class="card-header"><h2 class="card-title"><i class="ti ti-shield-dollar me-2"></i>Market risk and capital</h2></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="market_risk_enabled" {% if market_risk.enabled %}checked{% endif %}><span class="form-check-label">Market risk enabled</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="market_risk_conservative_exit_enabled" {% if market_risk.conservative_exit_enabled %}checked{% endif %}><span class="form-check-label">Conservative exit</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Exit strategy</label><input class="form-control" name="market_risk_exit_price_strategy" value="{{ market_risk.exit_price_strategy }}"></div>
+            <div class="col-12 col-md-3"><label class="form-check mt-4"><input class="form-check-input" type="checkbox" name="market_risk_downgrade_if_requires_sweep" {% if market_risk.downgrade_if_requires_sweep %}checked{% endif %}><span class="form-check-label">Downgrade sweep</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Min sample for good</label><input class="form-control" type="number" name="market_risk_min_sample_for_good" value="{{ market_risk.min_sample_for_good }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Min sample for critical</label><input class="form-control" type="number" name="market_risk_min_sample_for_critical" value="{{ market_risk.min_sample_for_critical }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Min neighbors for good</label><input class="form-control" type="number" name="market_risk_min_neighbor_for_good" value="{{ market_risk.min_neighbor_for_good }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Min neighbors for critical</label><input class="form-control" type="number" name="market_risk_min_neighbor_for_critical" value="{{ market_risk.min_neighbor_for_critical }}" min="1"></div>
+            <div class="col-12 col-md-4"><label class="form-label">Thin market max level</label><select class="form-select" name="market_risk_thin_market_max_level">{% for level in ["watch", "good", "critical", "skip"] %}<option value="{{ level }}" {% if market_risk.thin_market_max_level == level %}selected{% endif %}>{{ level }}</option>{% endfor %}</select></div>
+            <div class="col-12 col-md-4"><label class="form-label">Very thin max level</label><select class="form-select" name="market_risk_very_thin_market_max_level">{% for level in ["watch", "good", "critical", "skip"] %}<option value="{{ level }}" {% if market_risk.very_thin_market_max_level == level %}selected{% endif %}>{{ level }}</option>{% endfor %}</select></div>
+            <div class="col-12 col-md-4"><label class="form-label">Sweep max level</label><select class="form-select" name="market_risk_sweep_max_level_without_capital">{% for level in ["watch", "good", "critical", "skip"] %}<option value="{{ level }}" {% if market_risk.sweep_max_level_without_capital == level %}selected{% endif %}>{{ level }}</option>{% endfor %}</select></div>
+            <div class="col-12"><hr></div>
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="pack_detection_enabled" {% if pack_detection.enabled %}checked{% endif %}><span class="form-check-label">Pack detection</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Pack min gap, %</label><input class="form-control" type="number" step="0.01" name="pack_detection_min_gap_percent" value="{{ pack_detection.min_gap_percent }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Min pack size</label><input class="form-control" type="number" name="pack_detection_min_pack_size" value="{{ pack_detection.min_pack_size }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max pack size</label><input class="form-control" type="number" name="pack_detection_max_pack_size" value="{{ pack_detection.max_pack_size }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-check"><input class="form-check-input" type="checkbox" name="pack_detection_alert_as_single_pack" {% if pack_detection.alert_as_single_pack %}checked{% endif %}><span class="form-check-label">Single pack alert</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max pack/sample ratio</label><input class="form-control" type="number" step="0.01" name="pack_detection_max_pack_to_sample_ratio" value="{{ pack_detection.max_pack_to_sample_ratio }}" min="0" max="1"></div>
+            <div class="col-12"><hr></div>
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="capital_enabled" {% if capital.enabled %}checked{% endif %}><span class="form-check-label">Capital caps</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max single buy</label><input class="form-control" type="number" step="0.01" name="capital_max_single_buy_rub" value="{{ capital.max_single_buy_rub }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max bundle cost</label><input class="form-control" type="number" step="0.01" name="capital_max_bundle_cost_rub" value="{{ capital.max_bundle_cost_rub }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Max units per item</label><input class="form-control" type="number" name="capital_max_units_per_item" value="{{ capital.max_units_per_item }}" min="1"></div>
+            <div class="col-12 col-md-3"><label class="form-check"><input class="form-check-input" type="checkbox" name="capital_warn_if_sweep_required" {% if capital.warn_if_sweep_required %}checked{% endif %}><span class="form-check-label">Warn if sweep required</span></label></div>
+            <div class="col-12"><hr></div>
+            <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="craft_context_enabled" {% if craft_context.enabled %}checked{% endif %}><span class="form-check-label">Craft context</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-check"><input class="form-check-input" type="checkbox" name="craft_context_substitute_cap_enabled" {% if craft_context.substitute_cap_enabled %}checked{% endif %}><span class="form-check-label">Substitute cap</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Substitute multiplier</label><input class="form-control" type="number" step="0.01" name="craft_context_substitute_premium_multiplier" value="{{ craft_context.substitute_premium_multiplier }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-check mt-4"><input class="form-check-input" type="checkbox" name="craft_context_same_collection_same_rarity" {% if craft_context.same_collection_same_rarity %}checked{% endif %}><span class="form-check-label">Same rarity</span></label></div>
+            <div class="col-12 col-md-3"><label class="form-label">Substitute target float max</label><input class="form-control" type="number" step="0.0001" name="craft_context_target_float_max" value="{{ craft_context.target_float_max }}" min="0"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Min substitute sample</label><input class="form-control" type="number" name="craft_context_min_substitute_sample" value="{{ craft_context.min_substitute_sample }}" min="1"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card form-card">
         <div class="card-header"><h2 class="card-title"><i class="ti ti-shield-pause me-2"></i>Steam guard</h2></div>
         <div class="card-body">
           <div class="row">
+            <div class="col-12">
+              <div class="border rounded p-3 mb-3 d-flex align-items-start justify-content-between gap-3 flex-wrap">
+                <div>
+                  <div class="fw-semibold">Current cooldown state</div>
+                  <div class="text-secondary small">Cooldown until: {{ steam_guard_state.steam_cooldown_until or '-' }}</div>
+                  <div class="text-secondary small">Reason: {{ steam_guard_state.steam_cooldown_reason or '-' }}</div>
+                  <div class="text-secondary small">Consecutive blocks: {{ steam_guard_state.steam_consecutive_blocks or 0 }}</div>
+                  <div class="text-secondary small">Last Steam error: {{ steam_guard_state.last_steam_error_at or '-' }}</div>
+                </div>
+                <button class="btn btn-outline-danger" type="submit" form="steam-guard-reset" data-confirm="Reset Steam guard cooldown?">
+                  <i class="ti ti-refresh"></i>Reset cooldown
+                </button>
+              </div>
+            </div>
             <div class="col-12 col-md-3"><label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="steam_guard_enabled" {% if steam_guard.enabled %}checked{% endif %}><span class="form-check-label">Guard enabled</span></label></div>
             <div class="col-12 col-md-3"><label class="form-label">Cooldown on limit, sec</label><input class="form-control" type="number" name="steam_guard_cooldown_on_limit_seconds" value="{{ steam_guard.cooldown_on_limit_seconds }}" min="1"></div>
             <div class="col-12 col-md-3"><label class="form-label">Max cooldown, sec</label><input class="form-control" type="number" name="steam_guard_max_cooldown_seconds" value="{{ steam_guard.max_cooldown_seconds }}" min="1"></div>

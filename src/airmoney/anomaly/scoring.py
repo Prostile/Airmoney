@@ -73,10 +73,6 @@ def estimate_fair_price(
     rule: dict[str, Any] | None,
     weights: AnomalyScoringSettings,
 ) -> float | None:
-    target = _optional_float(rule, "target_resale_price_rub")
-    if target is not None:
-        return round(target, 2)
-
     weighted_prices: list[tuple[float, float]] = []
     if local_median is not None:
         weighted_prices.append((local_median, weights.local_discount_weight))

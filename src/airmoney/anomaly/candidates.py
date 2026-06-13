@@ -10,7 +10,7 @@ def candidate_from_anomaly_result(
     rule_id: str | None,
     market_fee_percent: float,
 ) -> Candidate:
-    resale = result.fair_price_rub or result.listing.price_rub
+    resale = result.exit_price_rub or result.fair_price_rub or result.listing.price_rub
     net_resale = result.net_resale_rub if result.net_resale_rub is not None else 0.0
     profit = result.net_profit_rub if result.net_profit_rub is not None else 0.0
     roi = result.roi_percent if result.roi_percent is not None else 0.0
@@ -44,5 +44,23 @@ def candidate_from_anomaly_result(
         sample_size=result.sample_size,
         neighbor_count=result.neighbor_count,
         anomaly_reasons=reasons_text,
+        anomaly_baseline_price_rub=result.anomaly_baseline_price_rub,
+        exit_price_rub=result.exit_price_rub,
+        exit_price_model=result.exit_price_model,
+        solo_exit_price_rub=result.solo_exit_price_rub,
+        sweep_exit_price_rub=result.sweep_exit_price_rub,
+        market_confidence=result.market_confidence,
+        liquidity_score=result.liquidity_score,
+        requires_sweep=result.requires_sweep,
+        manual_review_required=result.manual_review_required,
+        pack_id=result.pack_id,
+        pack_size=result.pack_size,
+        pack_cost_rub=result.pack_cost_rub,
+        pack_floor_after_rub=result.pack_floor_after_rub,
+        capital_required_rub=result.capital_required_rub,
+        substitute_floor_rub=result.substitute_floor_rub,
+        substitute_cap_rub=result.substitute_cap_rub,
+        raw_anomaly_score=result.raw_anomaly_score,
+        risk_adjusted_score=result.risk_adjusted_score,
         parsed_at=parsed_at_iso(result.listing),
     )

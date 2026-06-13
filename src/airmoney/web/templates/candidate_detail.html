@@ -26,7 +26,7 @@
           </div>
           <div class="col-6 col-md-3">
             <div class="text-secondary small">Score</div>
-            <div class="h3 mb-0">{{ "%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score) }}</div>
+            <div class="h3 mb-0">{{ "%.1f"|format(row.risk_adjusted_score) if row.risk_adjusted_score is not none else ("%.1f"|format(row.anomaly_score) if row.anomaly_score is not none else "%.1f"|format(row.recommendation_score)) }}</div>
           </div>
           <div class="col-6 col-md-3">
             <div class="text-secondary small">Profit</div>
@@ -41,8 +41,16 @@
         <div class="table-responsive table-responsive-medium mt-4">
           <table class="table table-sm">
             <tbody>
-              <tr><th>Buy price</th><td>{{ "%.2f"|format(row.buy_price_rub) }}</td><th>Fair price</th><td>{{ "%.2f"|format(row.fair_price_rub) if row.fair_price_rub is not none else "-" }}</td></tr>
+              <tr><th>Buy price</th><td>{{ "%.2f"|format(row.buy_price_rub) }}</td><th>Exit price</th><td>{{ "%.2f"|format(row.exit_price_rub) if row.exit_price_rub is not none else "%.2f"|format(row.estimated_resale_price_rub) }}</td></tr>
+              <tr><th>Anomaly baseline</th><td>{{ "%.2f"|format(row.anomaly_baseline_price_rub) if row.anomaly_baseline_price_rub is not none else ("%.2f"|format(row.fair_price_rub) if row.fair_price_rub is not none else "-") }}</td><th>Exit model</th><td>{{ row.exit_price_model or "-" }}</td></tr>
+              <tr><th>Solo exit</th><td>{{ "%.2f"|format(row.solo_exit_price_rub) if row.solo_exit_price_rub is not none else "-" }}</td><th>Sweep exit</th><td>{{ "%.2f"|format(row.sweep_exit_price_rub) if row.sweep_exit_price_rub is not none else "-" }}</td></tr>
               <tr><th>Net resale</th><td>{{ "%.2f"|format(row.estimated_net_resale_rub) }}</td><th>Market fee</th><td>{{ "%.2f"|format(row.market_fee_percent) }}%</td></tr>
+              <tr><th>Market confidence</th><td>{{ row.market_confidence or "-" }}</td><th>Liquidity score</th><td>{{ "%.1f"|format(row.liquidity_score) if row.liquidity_score is not none else "-" }}</td></tr>
+              <tr><th>Requires sweep</th><td>{{ "yes" if row.requires_sweep else "no" }}</td><th>Manual review</th><td>{{ "yes" if row.manual_review_required else "no" }}</td></tr>
+              <tr><th>Pack</th><td>{{ row.pack_id or "-" }}</td><th>Pack size</th><td>{{ row.pack_size or 0 }}</td></tr>
+              <tr><th>Pack cost</th><td>{{ "%.2f"|format(row.pack_cost_rub) if row.pack_cost_rub is not none else "-" }}</td><th>Next floor</th><td>{{ "%.2f"|format(row.pack_floor_after_rub) if row.pack_floor_after_rub is not none else "-" }}</td></tr>
+              <tr><th>Capital required</th><td>{{ "%.2f"|format(row.capital_required_rub) if row.capital_required_rub is not none else "-" }}</td><th>Substitute cap</th><td>{{ "%.2f"|format(row.substitute_cap_rub) if row.substitute_cap_rub is not none else "-" }}</td></tr>
+              <tr><th>Raw score</th><td>{{ "%.1f"|format(row.raw_anomaly_score) if row.raw_anomaly_score is not none else "-" }}</td><th>Risk score</th><td>{{ "%.1f"|format(row.risk_adjusted_score) if row.risk_adjusted_score is not none else "-" }}</td></tr>
               <tr><th>Local median</th><td>{{ "%.2f"|format(row.local_median_rub) if row.local_median_rub is not none else "-" }}</td><th>Local discount</th><td>{{ "%.1f"|format(row.local_discount_percent) ~ "%" if row.local_discount_percent is not none else "-" }}</td></tr>
               <tr><th>Float median</th><td>{{ "%.2f"|format(row.float_peer_median_rub) if row.float_peer_median_rub is not none else "-" }}</td><th>Float discount</th><td>{{ "%.1f"|format(row.float_peer_discount_percent) ~ "%" if row.float_peer_discount_percent is not none else "-" }}</td></tr>
               <tr><th>Historical baseline</th><td>{{ "%.2f"|format(row.historical_baseline_rub) if row.historical_baseline_rub is not none else "-" }}</td><th>Historical discount</th><td>{{ "%.1f"|format(row.historical_discount_percent) ~ "%" if row.historical_discount_percent is not none else "-" }}</td></tr>
