@@ -42,11 +42,17 @@
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Редкость</label>
-              <input class="form-control" name="rarity" placeholder="Restricted">
+              <select class="form-select" name="rarity">
+                <option value="">Rarity</option>
+                {% for rarity in rarities %}<option value="{{ rarity }}">{{ rarity }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Качество</label>
-              <input class="form-control" name="quality" placeholder="Souvenir">
+              <select class="form-select" name="quality">
+                <option value="">Quality</option>
+                {% for quality in qualities %}<option value="{{ quality }}">{{ quality }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Steam listing URL</label>
@@ -92,11 +98,17 @@
             </div>
             <div class="col-12 col-lg-2">
               <label class="form-label">Редкость</label>
-              <input class="form-control" name="rarity" placeholder="Restricted">
+              <select class="form-select" name="rarity">
+                <option value="">Rarity</option>
+                {% for rarity in rarities %}<option value="{{ rarity }}">{{ rarity }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-12 col-lg-2">
               <label class="form-label">Качество</label>
-              <input class="form-control" name="quality" placeholder="Souvenir">
+              <select class="form-select" name="quality">
+                <option value="">Quality</option>
+                {% for quality in qualities %}<option value="{{ quality }}">{{ quality }}</option>{% endfor %}
+              </select>
             </div>
             {% for exterior in exteriors %}
             <div class="col-12 col-sm-6 col-lg">
@@ -163,15 +175,34 @@
             <input class="form-control form-control-sm" form="{{ form_id }}" name="steam_market_url" value="{{ item.steam_market_url }}" placeholder="Steam URL">
           </td>
           <td>
-            <input class="form-control form-control-sm mb-2" form="{{ form_id }}" name="exterior" value="{{ item.exterior }}" placeholder="Exterior">
-            <input class="form-control form-control-sm mb-2" form="{{ form_id }}" name="rarity" value="{{ item.rarity }}" placeholder="Rarity">
-            <input class="form-control form-control-sm" form="{{ form_id }}" name="quality" value="{{ item.quality }}" placeholder="Quality">
+            <select class="form-select form-select-sm mb-2" form="{{ form_id }}" name="exterior">
+              <option value="">Exterior</option>
+              {% if item.exterior and item.exterior not in exteriors %}<option value="{{ item.exterior }}" selected>{{ item.exterior }}</option>{% endif %}
+              {% for exterior in exteriors %}<option value="{{ exterior }}" {% if item.exterior == exterior %}selected{% endif %}>{{ exterior }}</option>{% endfor %}
+            </select>
+            <select class="form-select form-select-sm mb-2" form="{{ form_id }}" name="rarity">
+              <option value="">Rarity</option>
+              {% if item.rarity and item.rarity not in rarities %}<option value="{{ item.rarity }}" selected>{{ item.rarity }}</option>{% endif %}
+              {% for rarity in rarities %}<option value="{{ rarity }}" {% if item.rarity == rarity %}selected{% endif %}>{{ rarity }}</option>{% endfor %}
+            </select>
+            <select class="form-select form-select-sm" form="{{ form_id }}" name="quality">
+              <option value="">Quality</option>
+              {% if item.quality and item.quality not in qualities %}<option value="{{ item.quality }}" selected>{{ item.quality }}</option>{% endif %}
+              {% for quality in qualities %}<option value="{{ quality }}" {% if item.quality == quality %}selected{% endif %}>{{ quality }}</option>{% endfor %}
+            </select>
           </td>
           <td>
-            {% if item.current_price_rub %}
+            {% if item.current_price_rub is not none %}
               <div class="fw-bold">{{ "%.2f"|format(item.current_price_rub) }} руб.</div>
             {% else %}
               <span class="text-secondary">-</span>
+            {% endif %}
+            <div class="text-secondary small">Median {{ "%.2f"|format(item.median_price_rub) if item.median_price_rub is not none else "-" }}</div>
+            <div class="text-secondary small">Rule {{ "%.2f"|format(item.rule_floor_rub) if item.rule_floor_rub is not none else "-" }}</div>
+            <div class="text-secondary small">Target {{ "%.2f"|format(item.target_floor_rub) if item.target_floor_rub is not none else "-" }}</div>
+            <div class="text-secondary small">n {{ item.active_listing_count or 0 }} / rule {{ item.rule_listing_count or 0 }} / target {{ item.target_listing_count or 0 }}</div>
+            {% if item.best_float_seen is not none %}
+              <div class="text-secondary small">best float {{ "%.6f"|format(item.best_float_seen) }}</div>
             {% endif %}
             <div class="text-secondary small">{{ item.currency_source or '' }}</div>
           </td>

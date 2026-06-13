@@ -23,6 +23,8 @@ from airmoney.config.models import (
     EXTERIORS,
     ItemDefinition,
     ParserSettings,
+    QUALITIES,
+    RARITIES,
     SnipingRule,
     to_bool,
 )
@@ -454,6 +456,8 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 "items": repository.list_items(collection_id),
                 "collections": repository.list_collections(),
                 "exteriors": EXTERIORS,
+                "rarities": RARITIES,
+                "qualities": QUALITIES,
                 "settings": repository.get_settings(),
                 "selected_collection": collection_id or "",
                 "exterior_field": _item_exterior_field,

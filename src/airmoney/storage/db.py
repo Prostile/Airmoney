@@ -220,6 +220,8 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             scanned_items INTEGER NOT NULL DEFAULT 0,
             listings_saved INTEGER NOT NULL DEFAULT 0,
             candidates_saved INTEGER NOT NULL DEFAULT 0,
+            analysis_rows_saved INTEGER NOT NULL DEFAULT 0,
+            skip_candidates_saved INTEGER NOT NULL DEFAULT 0,
             alerts_sent INTEGER NOT NULL DEFAULT 0,
             selected_targets_count INTEGER NOT NULL DEFAULT 0,
             skipped_by_queue_count INTEGER NOT NULL DEFAULT 0,
@@ -286,6 +288,10 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             shallow_gap_percent REAL,
             deep_scan_performed INTEGER NOT NULL DEFAULT 0,
             used_historical_baseline INTEGER NOT NULL DEFAULT 0,
+            rule_eligible_cards INTEGER NOT NULL DEFAULT 0,
+            target_float_cards INTEGER NOT NULL DEFAULT 0,
+            best_float_seen REAL,
+            hard_filter_rejection_counts TEXT NOT NULL DEFAULT '{}',
             duration_ms INTEGER NOT NULL DEFAULT 0,
             error TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
@@ -365,10 +371,23 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "deep_scan_count": "INTEGER NOT NULL DEFAULT 0",
         "steam_cooldown_active": "INTEGER NOT NULL DEFAULT 0",
         "steam_cooldown_until": "TEXT NOT NULL DEFAULT ''",
+        "analysis_rows_saved": "INTEGER NOT NULL DEFAULT 0",
+        "skip_candidates_saved": "INTEGER NOT NULL DEFAULT 0",
     }
     for column, definition in scan_run_defaults.items():
         if column not in scan_run_columns:
             connection.execute(f"ALTER TABLE scan_runs ADD COLUMN {column} {definition}")
+
+    scan_item_result_columns = _table_columns(connection, "scan_item_results")
+    scan_item_result_defaults = {
+        "rule_eligible_cards": "INTEGER NOT NULL DEFAULT 0",
+        "target_float_cards": "INTEGER NOT NULL DEFAULT 0",
+        "best_float_seen": "REAL",
+        "hard_filter_rejection_counts": "TEXT NOT NULL DEFAULT '{}'",
+    }
+    for column, definition in scan_item_result_defaults.items():
+        if column not in scan_item_result_columns:
+            connection.execute(f"ALTER TABLE scan_item_results ADD COLUMN {column} {definition}")
 
     candidate_columns = _table_columns(connection, "candidates")
     candidate_defaults = {

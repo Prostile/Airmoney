@@ -14,6 +14,22 @@ EXTERIORS = [
     "Battle-Scarred",
 ]
 
+RARITIES = [
+    "Consumer Grade",
+    "Industrial Grade",
+    "Mil-Spec Grade",
+    "Restricted",
+    "Classified",
+    "Covert",
+    "Contraband",
+]
+
+QUALITIES = [
+    "Normal",
+    "Souvenir",
+    "StatTrak",
+]
+
 RECOMMENDATION_LEVELS = ["critical", "good", "watch", "skip"]
 CANDIDATE_STATUSES = ["new", "opened", "checked", "bought_manually", "skipped", "expired"]
 

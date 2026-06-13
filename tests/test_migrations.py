@@ -105,8 +105,24 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
         "history_optimization_config",
         "steam_guard_config",
     } <= settings_columns
-    assert {"selected_targets_count", "resource_blocked_count", "steam_cooldown_until"} <= scan_run_columns
-    assert {"scan_run_id", "item_id", "status", "exact_cards", "duration_ms"} <= scan_item_result_columns
+    assert {
+        "selected_targets_count",
+        "resource_blocked_count",
+        "steam_cooldown_until",
+        "analysis_rows_saved",
+        "skip_candidates_saved",
+    } <= scan_run_columns
+    assert {
+        "scan_run_id",
+        "item_id",
+        "status",
+        "exact_cards",
+        "duration_ms",
+        "rule_eligible_cards",
+        "target_float_cards",
+        "best_float_seen",
+        "hard_filter_rejection_counts",
+    } <= scan_item_result_columns
     assert "snapshot_count" in baseline_columns
     assert baseline_row[0] == 1
     assert settings[0] == 1200

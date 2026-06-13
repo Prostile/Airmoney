@@ -20,6 +20,7 @@ def build_scan_diagnostics(repo: Repository, limit: int = 2) -> dict[str, Any]:
                 """
                 SELECT id, status, trigger, started_at, finished_at, total_items,
                        scanned_items, listings_saved, candidates_saved,
+                       analysis_rows_saved, skip_candidates_saved,
                        selected_targets_count, skipped_by_queue_count,
                        skipped_by_item_cooldown_count, skipped_by_collection_cooldown_count,
                        early_stop_count, resource_blocked_count, shallow_skipped_count,
@@ -54,7 +55,9 @@ def build_scan_diagnostics(repo: Repository, limit: int = 2) -> dict[str, Any]:
                            sir.status, sir.cards_seen, sir.exact_cards,
                            sir.target_listings_reached, sir.early_stop_reason,
                            sir.shallow_gap_percent, sir.deep_scan_performed,
-                           sir.used_historical_baseline, sir.duration_ms, sir.error,
+                           sir.used_historical_baseline, sir.rule_eligible_cards,
+                           sir.target_float_cards, sir.best_float_seen,
+                           sir.hard_filter_rejection_counts, sir.duration_ms, sir.error,
                            sir.created_at
                     FROM scan_item_results sir
                     LEFT JOIN items i ON i.id = sir.item_id
@@ -90,10 +93,16 @@ def render_scan_diagnostics(report: dict[str, Any]) -> str:
         lines.append(
             f"targets={run['total_items']} scanned={run['scanned_items']} "
             f"cards={run['cards_seen']} exact={run['exact_cards']} "
+            f"rule_eligible={run.get('rule_eligible_cards') or 0} "
+            f"target_float={run.get('target_float_cards') or 0} "
             f"listings={run['listings_saved']} candidates={run['candidates_saved']} "
+            f"analysis_rows={run.get('analysis_rows_saved') or 0} "
+            f"skip={run.get('skip_candidates_saved') or 0} "
             f"resources_blocked={run['resource_blocked_count']}"
         )
         lines.append(f"verdict: {run['verdict']}")
+        if run.get("hard_filter_rejection_counts"):
+            lines.append("hard filter rejects: " + _format_counts(run["hard_filter_rejection_counts"]))
         if run["status_counts"]:
             lines.append("item statuses: " + _format_counts(run["status_counts"]))
         if run["rejected_count"]:
@@ -165,6 +174,13 @@ def _load_rejections(connection, run: dict[str, Any], item_ids: list[str]) -> di
 def _diagnose_run(run: dict[str, Any], items: list[dict[str, Any]], rejections: dict[str, Any]) -> dict[str, Any]:
     cards_seen = sum(int(row.get("cards_seen") or 0) for row in items)
     exact_cards = sum(int(row.get("exact_cards") or 0) for row in items)
+    rule_eligible_cards = sum(int(row.get("rule_eligible_cards") or 0) for row in items)
+    target_float_cards = sum(int(row.get("target_float_cards") or 0) for row in items)
+    hard_filter_rejections: Counter[str] = Counter()
+    for row in items:
+        loaded = _loads(row.get("hard_filter_rejection_counts"))
+        if isinstance(loaded, dict):
+            hard_filter_rejections.update({str(key): int(value or 0) for key, value in loaded.items()})
     status_counts = Counter(str(row.get("status") or "") for row in items)
     rejected_exteriors = Counter()
     for example in rejections["examples"]:
@@ -177,6 +193,9 @@ def _diagnose_run(run: dict[str, Any], items: list[dict[str, Any]], rejections: 
         **run,
         "cards_seen": cards_seen,
         "exact_cards": exact_cards,
+        "rule_eligible_cards": rule_eligible_cards,
+        "target_float_cards": target_float_cards,
+        "hard_filter_rejection_counts": dict(hard_filter_rejections),
         "status_counts": dict(status_counts),
         "rejected_count": int(rejections["total"] or 0),
         "rejected_exteriors": dict(rejected_exteriors),
@@ -196,6 +215,8 @@ def _verdict(run: dict[str, Any], cards_seen: int, exact_cards: int, rejected_co
         return "Cards were seen, but none became exact listings; inspect parser output and target config."
     if int(run.get("listings_saved") or 0) == 0:
         return "Exact listings exist, but persistence did not save them."
+    if int(run.get("candidates_saved") or 0) == 0 and int(run.get("skip_candidates_saved") or 0) > 0:
+        return "Only debug/skip analysis rows were saved; working candidates are hidden because hard filters or thresholds rejected them."
     if int(run.get("candidates_saved") or 0) == 0:
         return "Listings were saved, but anomaly thresholds produced no candidate."
     return "Listings and candidates were produced."

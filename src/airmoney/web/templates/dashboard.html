@@ -117,6 +117,7 @@
           <th>Предметов</th>
           <th>Лотов</th>
           <th>Кандидатов</th>
+          <th>Debug/skip</th>
           <th>Алертов</th>
           <th>Ошибка</th>
         </tr>
@@ -130,6 +131,7 @@
           <td>{{ run.scanned_items }}</td>
           <td>{{ run.listings_saved }}</td>
           <td>{{ run.candidates_saved }}</td>
+          <td>{{ run.analysis_rows_saved or 0 }}/{{ run.skip_candidates_saved or 0 }}</td>
           <td>{{ run.alerts_sent }}</td>
           <td class="text-secondary">{{ run.error }}</td>
         </tr>

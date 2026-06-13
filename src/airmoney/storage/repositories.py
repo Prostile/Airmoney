@@ -4,6 +4,7 @@ import json
 import sqlite3
 import uuid
 import random
+from statistics import median
 from contextlib import contextmanager
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
@@ -25,6 +26,7 @@ from airmoney.config.models import (
     utc_now_iso,
 )
 from airmoney.storage.db import connect, initialize_database
+from airmoney.steam.extractor import value_in_ranges
 
 
 def new_id(prefix: str) -> str:
@@ -61,6 +63,69 @@ def _date_end(value: str) -> str:
     if len(text) == 10:
         return text + "T23:59:59"
     return text
+
+
+def _optional_float(row: dict[str, Any], key: str) -> float | None:
+    value = row.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _listing_prices(listings: list[dict[str, Any]]) -> list[float]:
+    prices: list[float] = []
+    for listing in listings:
+        price = _optional_float(listing, "buy_price_rub")
+        if price is not None and price > 0:
+            prices.append(price)
+    return prices
+
+
+def _listing_matches_hard_rule(listing: dict[str, Any], rule: dict[str, Any]) -> bool:
+    if rule.get("rule_enabled") is not None and not bool(rule.get("rule_enabled")):
+        return False
+    price = _optional_float(listing, "buy_price_rub")
+    if price is None or price <= 0:
+        return False
+    max_buy = _optional_float(rule, "max_buy_price_rub")
+    if max_buy is not None and price > max_buy:
+        return False
+    float_value = _optional_float(listing, "float_value")
+    float_min = _optional_float(rule, "float_min")
+    float_max = _optional_float(rule, "float_max")
+    if float_min is not None and (float_value is None or float_value < float_min):
+        return False
+    if float_max is not None and (float_value is None or float_value > float_max):
+        return False
+    pattern_ranges = str(rule.get("pattern_ranges") or "")
+    if pattern_ranges and not value_in_ranges(listing.get("pattern"), pattern_ranges):
+        return False
+    return True
+
+
+def _listing_matches_target_float(listing: dict[str, Any], rule: dict[str, Any]) -> bool:
+    target_min = _optional_float(rule, "target_float_min")
+    target_max = _optional_float(rule, "target_float_max")
+    if target_min is None and target_max is None:
+        return False
+    float_value = _optional_float(listing, "float_value")
+    if float_value is None:
+        return False
+    left = target_min if target_min is not None else float("-inf")
+    right = target_max if target_max is not None else float("inf")
+    return left <= float_value <= right
+
+
+def _json_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value[:2000]
+    try:
+        return json.dumps(value, ensure_ascii=False)[:2000]
+    except TypeError:
+        return "{}"
 
 
 @dataclass
@@ -266,7 +331,51 @@ class Repository:
                 """,
                 params,
             ).fetchall()
-        return [dict(row) for row in rows]
+            items = [dict(row) for row in rows]
+            self._add_item_price_metrics(connection, items)
+        return items
+
+    def _add_item_price_metrics(self, connection: sqlite3.Connection, items: list[dict[str, Any]]) -> None:
+        if not items:
+            return
+        placeholders = ",".join("?" for _ in items)
+        item_by_id = {str(item["id"]): item for item in items}
+        rows = connection.execute(
+            f"""
+            SELECT item_definition_id, buy_price_rub, float_value, pattern, currency_source
+            FROM market_listings
+            WHERE is_active = 1
+              AND item_definition_id IN ({placeholders})
+            ORDER BY item_definition_id, buy_price_rub ASC, id ASC
+            """,
+            list(item_by_id.keys()),
+        ).fetchall()
+        listings_by_item: dict[str, list[dict[str, Any]]] = {item_id: [] for item_id in item_by_id}
+        for row in rows:
+            listings_by_item[str(row["item_definition_id"])].append(dict(row))
+
+        for item_id, item in item_by_id.items():
+            listings = listings_by_item.get(item_id, [])
+            hard_rows = [listing for listing in listings if _listing_matches_hard_rule(listing, item)]
+            target_rows = [listing for listing in hard_rows if _listing_matches_target_float(listing, item)]
+            all_prices = _listing_prices(listings)
+            hard_prices = _listing_prices(hard_rows)
+            target_prices = _listing_prices(target_rows)
+            floats = [
+                float(listing["float_value"])
+                for listing in listings
+                if listing.get("float_value") is not None
+            ]
+            item["current_price_rub"] = min(all_prices) if all_prices else None
+            item["median_price_rub"] = float(median(all_prices)) if all_prices else None
+            item["rule_floor_rub"] = min(hard_prices) if hard_prices else None
+            item["target_floor_rub"] = min(target_prices) if target_prices else None
+            item["active_listing_count"] = len(listings)
+            item["rule_listing_count"] = len(hard_rows)
+            item["target_listing_count"] = len(target_rows)
+            item["best_float_seen"] = min(floats) if floats else None
+            if listings:
+                item["currency_source"] = str(listings[0].get("currency_source") or "")
 
     def get_item(self, item_id: str) -> dict[str, Any] | None:
         with self.connection() as connection:
@@ -883,6 +992,28 @@ class Repository:
                     """,
                     asdict(candidate),
                 )
+            current_listing_ids = {listing.id for listing in listings}
+            analyzed_listing_ids = {candidate.listing_id for candidate in candidates}
+            stale_candidate_listing_ids = sorted(current_listing_ids - analyzed_listing_ids)
+            if stale_candidate_listing_ids:
+                placeholders = ",".join("?" for _ in stale_candidate_listing_ids)
+                connection.execute(
+                    f"""
+                    UPDATE candidates
+                    SET recommendation_level = 'skip',
+                        alert_level = 'skip',
+                        recommendation_reason = 'hard rule filters no longer match current scan',
+                        anomaly_reasons = CASE
+                            WHEN COALESCE(anomaly_reasons, '') = ''
+                                THEN 'hard rule filters no longer match current scan'
+                            ELSE anomaly_reasons
+                        END,
+                        updated_at = ?
+                    WHERE listing_id IN ({placeholders})
+                      AND recommendation_level != 'skip'
+                    """,
+                    [now, *stale_candidate_listing_ids],
+                )
             self._save_market_snapshots_in_connection(connection, snapshots, snapshot_alpha)
             last_seen_at = max((listing.last_seen_at for listing in listings), default=now)
             connection.execute(
@@ -890,7 +1021,17 @@ class Repository:
                 (last_seen_at, now, item_id),
             )
             self._insert_scan_item_result(connection, run_id, item_id, item_result, now)
-        return {"listings_saved": len(listings), "candidates_saved": len(candidates)}
+        skip_candidates_saved = sum(
+            1 for candidate in candidates if candidate.recommendation_level == "skip"
+        )
+        analysis_rows_saved = len(candidates)
+        actionable_candidates_saved = analysis_rows_saved - skip_candidates_saved
+        return {
+            "listings_saved": len(listings),
+            "candidates_saved": actionable_candidates_saved,
+            "analysis_rows_saved": analysis_rows_saved,
+            "skip_candidates_saved": skip_candidates_saved,
+        }
 
     def save_item_scan_failure(
         self,
@@ -919,10 +1060,11 @@ class Repository:
             INSERT INTO scan_item_results (
                 scan_run_id, item_id, status, cards_seen, exact_cards,
                 target_listings_reached, early_stop_reason, shallow_gap_percent,
-                deep_scan_performed, used_historical_baseline, duration_ms,
-                error, created_at, updated_at
+                deep_scan_performed, used_historical_baseline, rule_eligible_cards,
+                target_float_cards, best_float_seen, hard_filter_rejection_counts,
+                duration_ms, error, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -935,6 +1077,10 @@ class Repository:
                 item_result.get("shallow_gap_percent"),
                 int(bool(item_result.get("deep_scan_performed"))),
                 int(bool(item_result.get("used_historical_baseline"))),
+                int(item_result.get("rule_eligible_cards") or 0),
+                int(item_result.get("target_float_cards") or 0),
+                item_result.get("best_float_seen"),
+                _json_text(item_result.get("hard_filter_rejection_counts") or {}),
                 int(item_result.get("duration_ms") or 0),
                 str(item_result.get("error") or "")[:2000],
                 now,
@@ -1488,6 +1634,8 @@ class Repository:
         scanned_items: int | None = None,
         listings_saved: int | None = None,
         candidates_saved: int | None = None,
+        analysis_rows_saved: int | None = None,
+        skip_candidates_saved: int | None = None,
     ) -> None:
         updates: list[str] = ["updated_at = ?"]
         params: list[Any] = [utc_now_iso()]
@@ -1499,6 +1647,8 @@ class Repository:
             "scanned_items": scanned_items,
             "listings_saved": listings_saved,
             "candidates_saved": candidates_saved,
+            "analysis_rows_saved": analysis_rows_saved,
+            "skip_candidates_saved": skip_candidates_saved,
         }
         for column, value in values.items():
             if value is None:
@@ -1519,6 +1669,8 @@ class Repository:
         scanned_items: int = 0,
         listings_saved: int = 0,
         candidates_saved: int = 0,
+        analysis_rows_saved: int = 0,
+        skip_candidates_saved: int = 0,
         alerts_sent: int = 0,
         error: str = "",
         selected_targets_count: int = 0,
@@ -1548,6 +1700,8 @@ class Repository:
                     scanned_items = ?,
                     listings_saved = ?,
                     candidates_saved = ?,
+                    analysis_rows_saved = ?,
+                    skip_candidates_saved = ?,
                     alerts_sent = ?,
                     selected_targets_count = ?,
                     skipped_by_queue_count = ?,
@@ -1571,6 +1725,8 @@ class Repository:
                     int(scanned_items),
                     int(listings_saved),
                     int(candidates_saved),
+                    int(analysis_rows_saved),
+                    int(skip_candidates_saved),
                     int(alerts_sent),
                     int(selected_targets_count),
                     int(skipped_by_queue_count),

@@ -31,7 +31,7 @@ from airmoney.steam.parser import (
     get_page_item_name,
     parse_card,
 )
-from airmoney.steam.extractor import parse_price_values
+from airmoney.steam.extractor import parse_price_values, value_in_ranges
 
 
 @dataclass
@@ -40,6 +40,8 @@ class ScanResult:
     scanned_items: int = 0
     listings_saved: int = 0
     candidates_saved: int = 0
+    analysis_rows_saved: int = 0
+    skip_candidates_saved: int = 0
     alert_candidates: list[Candidate] | None = None
     message: str = ""
     selected_targets_count: int = 0
@@ -597,10 +599,12 @@ def _scan_item_once(
         return item_result
 
     rule = repository.get_rule_for_item(target.id)
+    eligible_info = _rule_eligible_listing_info(item_listings, row, rule)
+    rule_eligible_listings = eligible_info["eligible_listings"]
     candidates: list[Candidate] = []
-    if deep_scan_performed:
+    if deep_scan_performed and rule_eligible_listings:
         all_candidates = _evaluate_item_listings(
-            item_listings,
+            rule_eligible_listings,
             row,
             rule,
             settings,
@@ -622,9 +626,13 @@ def _scan_item_once(
         )
 
     item_result = {
-        "status": "success" if deep_scan_performed else "scanned_without_anomaly",
+        "status": _item_result_status(deep_scan_performed, item_listings, rule_eligible_listings),
         "cards_seen": len(seen_cards),
         "exact_cards": len(item_listings),
+        "rule_eligible_cards": len(rule_eligible_listings),
+        "target_float_cards": eligible_info["target_float_cards"],
+        "best_float_seen": eligible_info["best_float_seen"],
+        "hard_filter_rejection_counts": eligible_info["hard_filter_rejection_counts"],
         "target_listings_reached": len(item_listings) >= effective_target,
         "early_stop_reason": early_stop_reason,
         "shallow_gap_percent": shallow_gap_percent,
@@ -644,6 +652,8 @@ def _scan_item_once(
         )
         result.listings_saved += saved["listings_saved"]
         result.candidates_saved += saved["candidates_saved"]
+        result.analysis_rows_saved += saved.get("analysis_rows_saved", saved["candidates_saved"])
+        result.skip_candidates_saved += saved.get("skip_candidates_saved", 0)
     else:
         repository.mark_listings_inactive_for_items([target.id])
         for listing in item_listings:
@@ -651,7 +661,11 @@ def _scan_item_once(
             result.listings_saved += 1
         for candidate in candidates:
             repository.save_candidate(candidate)
-            result.candidates_saved += 1
+            result.analysis_rows_saved += 1
+            if candidate.recommendation_level == "skip":
+                result.skip_candidates_saved += 1
+            else:
+                result.candidates_saved += 1
         if snapshots:
             repository.save_market_snapshots(snapshots, alpha=settings.anomaly_settings.history.ewma_alpha)
     return item_result
@@ -711,6 +725,99 @@ def _historical_gap_percent(
         gap = round((1 - parsed.price_rub / baseline) * 100, 2)
         best_gap = gap if best_gap is None else max(best_gap, gap)
     return best_gap
+
+
+def _item_result_status(
+    deep_scan_performed: bool,
+    item_listings: list[MarketListing],
+    rule_eligible_listings: list[MarketListing],
+) -> str:
+    if item_listings and not rule_eligible_listings:
+        return "scanned_no_rule_matches"
+    return "success" if deep_scan_performed else "scanned_without_anomaly"
+
+
+def _rule_eligible_listing_info(
+    listings: list[MarketListing],
+    item: dict[str, Any],
+    rule: dict[str, Any] | None,
+) -> dict[str, Any]:
+    eligible: list[MarketListing] = []
+    rejection_counts: dict[str, int] = {}
+    target_float_cards = 0
+    best_float_seen: float | None = None
+    for listing in listings:
+        if listing.float_value is not None:
+            best_float_seen = (
+                listing.float_value
+                if best_float_seen is None
+                else min(best_float_seen, listing.float_value)
+            )
+        reasons = _hard_rule_rejection_keys(listing, item, rule)
+        if reasons:
+            for reason in reasons:
+                rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+            continue
+        eligible.append(listing)
+        if _matches_target_float(listing, rule):
+            target_float_cards += 1
+    return {
+        "eligible_listings": eligible,
+        "target_float_cards": target_float_cards,
+        "best_float_seen": best_float_seen,
+        "hard_filter_rejection_counts": rejection_counts,
+    }
+
+
+def _hard_rule_rejection_keys(
+    listing: MarketListing,
+    item: dict[str, Any],
+    rule: dict[str, Any] | None,
+) -> list[str]:
+    reasons: list[str] = []
+    if not bool(item.get("enabled", True)):
+        reasons.append("item_disabled")
+    if rule and not bool(rule.get("enabled", True)):
+        reasons.append("rule_disabled")
+    if listing.buy_price_rub <= 0:
+        reasons.append("price_missing")
+    max_buy = _optional_rule_float(rule, "max_buy_price_rub")
+    if max_buy is not None and listing.buy_price_rub > max_buy:
+        reasons.append("max_buy_price")
+    float_min = _optional_rule_float(rule, "float_min")
+    float_max = _optional_rule_float(rule, "float_max")
+    if float_min is not None and (listing.float_value is None or listing.float_value < float_min):
+        reasons.append("float_min")
+    if float_max is not None and (listing.float_value is None or listing.float_value > float_max):
+        reasons.append("float_max")
+    pattern_ranges = str(rule.get("pattern_ranges", "") if rule else "")
+    if pattern_ranges and not value_in_ranges(listing.pattern, pattern_ranges):
+        reasons.append("pattern_ranges")
+    return reasons
+
+
+def _matches_target_float(listing: MarketListing, rule: dict[str, Any] | None) -> bool:
+    target_min = _optional_rule_float(rule, "target_float_min")
+    target_max = _optional_rule_float(rule, "target_float_max")
+    if target_min is None and target_max is None:
+        return False
+    if listing.float_value is None:
+        return False
+    left = target_min if target_min is not None else float("-inf")
+    right = target_max if target_max is not None else float("inf")
+    return left <= listing.float_value <= right
+
+
+def _optional_rule_float(rule: dict[str, Any] | None, key: str) -> float | None:
+    if not rule:
+        return None
+    value = rule.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _duration_ms(started: float) -> int:

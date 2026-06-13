@@ -50,6 +50,8 @@ def _legacy_run_scan_cycle(
             scanned_items=result.scanned_items,
             listings_saved=result.listings_saved,
             candidates_saved=result.candidates_saved,
+            analysis_rows_saved=result.analysis_rows_saved,
+            skip_candidates_saved=result.skip_candidates_saved,
             alerts_sent=alerts_sent,
             error=result.message,
         )
@@ -111,6 +113,8 @@ def run_scan_cycle(
             scanned_items=result.scanned_items,
             listings_saved=result.listings_saved,
             candidates_saved=result.candidates_saved,
+            analysis_rows_saved=result.analysis_rows_saved,
+            skip_candidates_saved=result.skip_candidates_saved,
             alerts_sent=alerts_sent,
             error=result.message,
             selected_targets_count=result.selected_targets_count,

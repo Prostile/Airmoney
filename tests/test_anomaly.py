@@ -15,7 +15,14 @@ from airmoney.anomaly.history import build_market_snapshots, ewma
 from airmoney.anomaly.scoring import calculate_real_profit, estimate_fair_price, resolve_alert_level
 from airmoney.config.models import AnomalySettings, Collection, ItemDefinition, MarketListing, ParserSettings
 from airmoney.storage.repositories import Repository
-from airmoney.steam.scanner import _evaluate_item_listings, _prepare_item_listings, _should_save_candidate, _sorted_market_url
+from airmoney.steam.scanner import (
+    _evaluate_item_listings,
+    _item_result_status,
+    _prepare_item_listings,
+    _rule_eligible_listing_info,
+    _should_save_candidate,
+    _sorted_market_url,
+)
 
 
 def listing(
@@ -300,6 +307,40 @@ def test_prepare_item_listings_sorts_by_price_and_limits():
     prepared = _prepare_item_listings(listings, target_listings=2)
 
     assert [listing.buy_price_rub for listing in prepared] == [472, 690]
+
+
+def test_rule_eligible_listing_info_applies_hard_filters_and_target_separately():
+    listings = [
+        MarketListing(id="listing_target", item_definition_id="ump", rule_id=None, skin_name="UMP", buy_price_rub=100, float_value=0.005),
+        MarketListing(id="listing_rule", item_definition_id="ump", rule_id=None, skin_name="UMP", buy_price_rub=120, float_value=0.015),
+        MarketListing(id="listing_reject", item_definition_id="ump", rule_id=None, skin_name="UMP", buy_price_rub=90, float_value=0.05),
+    ]
+
+    info = _rule_eligible_listing_info(
+        listings,
+        {"enabled": True},
+        {
+            "enabled": True,
+            "float_min": 0.0,
+            "float_max": 0.02,
+            "target_float_min": 0.0,
+            "target_float_max": 0.01,
+        },
+    )
+
+    assert [listing.id for listing in info["eligible_listings"]] == ["listing_target", "listing_rule"]
+    assert info["target_float_cards"] == 1
+    assert info["best_float_seen"] == 0.005
+    assert info["hard_filter_rejection_counts"] == {"float_max": 1}
+
+
+def test_item_result_status_marks_exact_cards_without_rule_matches():
+    listings = [
+        MarketListing(id="listing_reject", item_definition_id="ump", rule_id=None, skin_name="UMP", buy_price_rub=90, float_value=0.05),
+    ]
+
+    assert _item_result_status(True, listings, []) == "scanned_no_rule_matches"
+    assert _item_result_status(True, listings, listings) == "success"
 
 
 def test_sorted_market_url_forces_price_ascending():
