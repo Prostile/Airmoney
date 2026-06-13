@@ -306,10 +306,14 @@ def test_sorted_market_url_forces_price_ascending():
     url = _sorted_market_url(
         "https://steamcommunity.com/market/listings/730/Souvenir%20UMP-45%20%7C%20Mechanism?foo=bar",
         "price_asc",
+        {"exterior": "Factory New", "is_souvenir": True},
     )
 
     assert "foo=bar" in url
     assert "l=english" in url
+    assert "appid=730" in url
+    assert "category_730_Exterior=tag_WearCategory0" in url
+    assert "category_730_Quality=tag_tournament" in url
     assert "sort_column=price" in url
     assert "sort_dir=asc" in url
     assert url.endswith("#p1_price_asc")

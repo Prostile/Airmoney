@@ -1,6 +1,8 @@
 import sqlite3
 
+from airmoney.config.models import Collection, ItemDefinition
 from airmoney.storage.db import initialize_database
+from airmoney.storage.repositories import Repository
 
 
 def test_initialize_database_adds_currency_fetched_at_to_existing_market_listings(tmp_path):
@@ -79,6 +81,7 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
 
     connection = sqlite3.connect(db_path)
     settings_columns = {row[1] for row in connection.execute("PRAGMA table_info(settings)")}
+    item_columns = {row[1] for row in connection.execute("PRAGMA table_info(items)")}
     listing_columns = {row[1] for row in connection.execute("PRAGMA table_info(market_listings)")}
     scan_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_runs)")}
     scan_item_result_columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_item_results)")}
@@ -92,6 +95,7 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
     ).fetchone()
     connection.close()
     assert "selected_exteriors" in settings_columns
+    assert "last_scanned_at" in item_columns
     assert "currency_fetched_at" in listing_columns
     assert {"total_items", "current_item_index", "current_item_name", "progress_message", "updated_at"} <= scan_run_columns
     assert {
@@ -111,3 +115,24 @@ def test_initialize_database_adds_currency_fetched_at_to_existing_market_listing
     assert settings[3] == 7200
     assert "max_items_per_cycle" in settings[4]
     assert app_state_marker[0] == "1"
+
+
+def test_initialize_database_backfills_last_scanned_at_from_item_results(tmp_path):
+    db_path = tmp_path / "scan_history.sqlite3"
+    repo = Repository(db_path)
+    repo.save_collection(Collection(id="c1", name="Collection"))
+    repo.save_item(ItemDefinition(id="i0", collection_id="c1", market_hash_name="Skin 0"))
+    run_id = repo.start_scan_run("test")
+    repo.save_item_scan_failure(run_id, "i0", {"status": "no_exact_cards", "cards_seen": 20})
+
+    connection = sqlite3.connect(db_path)
+    connection.execute("UPDATE items SET last_scanned_at = NULL WHERE id = 'i0'")
+    connection.commit()
+    connection.close()
+
+    initialize_database(db_path)
+
+    connection = sqlite3.connect(db_path)
+    row = connection.execute("SELECT last_scanned_at FROM items WHERE id = 'i0'").fetchone()
+    connection.close()
+    assert row[0]

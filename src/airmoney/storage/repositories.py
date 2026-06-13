@@ -280,12 +280,12 @@ class Repository:
                 INSERT INTO items (
                     id, collection_id, market_hash_name, display_name, weapon_type,
                     rarity, quality, exterior, is_souvenir, is_stattrak,
-                    steam_market_url, enabled, last_parsed_at
+                    steam_market_url, enabled, last_parsed_at, last_scanned_at
                 )
                 VALUES (
                     :id, :collection_id, :market_hash_name, :display_name, :weapon_type,
                     :rarity, :quality, :exterior, :is_souvenir, :is_stattrak,
-                    :steam_market_url, :enabled, :last_parsed_at
+                    :steam_market_url, :enabled, :last_parsed_at, :last_scanned_at
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     collection_id = excluded.collection_id,
@@ -299,7 +299,8 @@ class Repository:
                     is_stattrak = excluded.is_stattrak,
                     steam_market_url = excluded.steam_market_url,
                     enabled = excluded.enabled,
-                    last_parsed_at = excluded.last_parsed_at
+                    last_parsed_at = excluded.last_parsed_at,
+                    last_scanned_at = excluded.last_scanned_at
                 """,
                 {
                     **asdict(item),
@@ -465,13 +466,13 @@ class Repository:
         collection_latest: dict[str, Any] = {}
         for row in rows:
             collection_key = str(row.get("collection_id") or "")
-            last = parse_dt(row.get("last_parsed_at"))
+            last = parse_dt(row.get("last_scanned_at") or row.get("last_parsed_at"))
             current_latest = collection_latest.get(collection_key)
             if last is not None and (current_latest is None or last > current_latest):
                 collection_latest[collection_key] = last
 
         for row in rows:
-            last = parse_dt(row.get("last_parsed_at"))
+            last = parse_dt(row.get("last_scanned_at") or row.get("last_parsed_at"))
             if (
                 queue.item_cooldown_seconds > 0
                 and last is not None
@@ -492,7 +493,7 @@ class Repository:
 
         def sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
             priority = int(row.get("priority") or 0)
-            last = parse_dt(row.get("last_parsed_at"))
+            last = parse_dt(row.get("last_scanned_at") or row.get("last_parsed_at"))
             last_key = last.timestamp() if last is not None else 0
             return (
                 -priority if queue.priority_first else 0,
@@ -678,8 +679,8 @@ class Repository:
                 },
             )
             connection.execute(
-                "UPDATE items SET last_parsed_at = ? WHERE id = ?",
-                (listing.last_seen_at, listing.item_definition_id),
+                "UPDATE items SET last_parsed_at = ?, last_scanned_at = ? WHERE id = ?",
+                (listing.last_seen_at, listing.last_seen_at, listing.item_definition_id),
             )
 
     def save_candidate(self, candidate: Candidate) -> None:
@@ -885,8 +886,8 @@ class Repository:
             self._save_market_snapshots_in_connection(connection, snapshots, snapshot_alpha)
             last_seen_at = max((listing.last_seen_at for listing in listings), default=now)
             connection.execute(
-                "UPDATE items SET last_parsed_at = ? WHERE id = ?",
-                (last_seen_at, item_id),
+                "UPDATE items SET last_parsed_at = ?, last_scanned_at = ? WHERE id = ?",
+                (last_seen_at, now, item_id),
             )
             self._insert_scan_item_result(connection, run_id, item_id, item_result, now)
         return {"listings_saved": len(listings), "candidates_saved": len(candidates)}
@@ -899,6 +900,10 @@ class Repository:
     ) -> None:
         now = utc_now_iso()
         with self.connection() as connection:
+            connection.execute(
+                "UPDATE items SET last_scanned_at = ? WHERE id = ?",
+                (now, item_id),
+            )
             self._insert_scan_item_result(connection, run_id, item_id, item_result or {}, now)
 
     def _insert_scan_item_result(
@@ -1698,9 +1703,9 @@ class Repository:
                 INSERT INTO items (
                     id, collection_id, market_hash_name, display_name, weapon_type,
                     rarity, quality, exterior, is_souvenir, is_stattrak,
-                    steam_market_url, enabled, last_parsed_at
+                    steam_market_url, enabled, last_parsed_at, last_scanned_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.id,
@@ -1716,6 +1721,7 @@ class Repository:
                     item.steam_market_url,
                     int(item.enabled),
                     item.last_parsed_at,
+                    item.last_scanned_at,
                 ),
             )
         for rule in rules:

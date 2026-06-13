@@ -494,6 +494,7 @@ class ItemDefinition:
     steam_market_url: str = ""
     enabled: bool = True
     last_parsed_at: str | None = None
+    last_scanned_at: str | None = None
 
 
 @dataclass

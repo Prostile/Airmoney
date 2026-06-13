@@ -5,6 +5,7 @@ import secrets
 import sys
 from pathlib import Path
 
+from airmoney.analytics.scan_diagnostics import build_scan_diagnostics, render_scan_diagnostics
 from airmoney.config.catalog_import import import_catalog_text
 from airmoney.config.import_export import export_config, import_config_file
 from airmoney.currency.steam_currency import CurrencyService
@@ -13,6 +14,7 @@ from airmoney.reports.csv_export import export_candidates_csv
 from airmoney.reports.html_export import export_candidates_html
 from airmoney.reports.legacy_import import import_legacy_matches_csv
 from airmoney.scheduler.monitor import monitor, run_scan_cycle
+from airmoney.steam.market_probe import probe_item_filters, render_probe_report
 from airmoney.storage.db import initialize_database
 from airmoney.storage.repositories import Repository
 
@@ -57,6 +59,15 @@ def build_parser() -> argparse.ArgumentParser:
     catalog = subparsers.add_parser("import-catalog", help="Добавить каталог коллекций/предметов без замены конфига")
     catalog.add_argument("--input", required=True)
     catalog.add_argument("--validate-only", action="store_true")
+
+    diagnose = subparsers.add_parser("diagnose-scans", help="Показать диагностику последних сканов")
+    diagnose.add_argument("--limit", type=int, default=2)
+
+    probe = subparsers.add_parser("probe-steam-item", help="Безопасно проверить Steam URL/filter variants для одного item")
+    probe.add_argument("--item-id", required=True)
+    probe.add_argument("--limit", type=int, default=20)
+    probe.add_argument("--delay-seconds", type=float, default=8.0)
+    probe.add_argument("--output")
 
     subparsers.add_parser("refresh-currency", help="Принудительно обновить курсы валют")
     return parser
@@ -190,7 +201,34 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "diagnose-scans":
+        print(render_scan_diagnostics(build_scan_diagnostics(repo, limit=args.limit)))
+        return 0
+
+    if args.command == "probe-steam-item":
+        report = probe_item_filters(
+            repo,
+            item_id=args.item_id,
+            limit=args.limit,
+            delay_seconds=args.delay_seconds,
+        )
+        rendered = render_probe_report(report)
+        if args.output:
+            Path(args.output).write_text(rendered, encoding="utf-8")
+            print(f"Probe report saved: {args.output}")
+        else:
+            _safe_print(rendered)
+        return 0
+
     return 1
+
+
+def _safe_print(value: str) -> None:
+    try:
+        print(value)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        print(value.encode(encoding, errors="replace").decode(encoding, errors="replace"))
 
 
 if __name__ == "__main__":

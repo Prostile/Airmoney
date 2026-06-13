@@ -84,6 +84,7 @@ def apply_schema(connection: sqlite3.Connection) -> None:
             steam_market_url TEXT NOT NULL DEFAULT '',
             enabled INTEGER NOT NULL DEFAULT 1,
             last_parsed_at TEXT,
+            last_scanned_at TEXT,
             FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
         );
 
@@ -323,6 +324,26 @@ def apply_lightweight_migrations(connection: sqlite3.Connection) -> None:
                 f"ALTER TABLE settings ADD COLUMN {column} TEXT NOT NULL DEFAULT '{escaped}'"
             )
     listing_columns = _table_columns(connection, "market_listings")
+    item_columns = _table_columns(connection, "items")
+    if "last_scanned_at" not in item_columns:
+        connection.execute("ALTER TABLE items ADD COLUMN last_scanned_at TEXT")
+    connection.execute(
+        """
+        UPDATE items
+        SET last_scanned_at = (
+            SELECT MAX(created_at)
+            FROM scan_item_results
+            WHERE scan_item_results.item_id = items.id
+        )
+        WHERE COALESCE(last_scanned_at, '') = ''
+          AND EXISTS (
+              SELECT 1
+              FROM scan_item_results
+              WHERE scan_item_results.item_id = items.id
+          )
+        """
+    )
+
     if "currency_fetched_at" not in listing_columns:
         connection.execute(
             "ALTER TABLE market_listings ADD COLUMN currency_fetched_at TEXT NOT NULL DEFAULT ''"

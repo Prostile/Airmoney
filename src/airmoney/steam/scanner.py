@@ -24,7 +24,7 @@ from airmoney.steam.browser import (
     close_cookie_banner,
     install_resource_blocking,
 )
-from airmoney.steam.collections import build_market_listing_url
+from airmoney.steam.collections import build_market_listing_url, steam_market_filter_params
 from airmoney.steam.parser import (
     ItemScanTarget,
     extract_visible_cards_raw,
@@ -135,7 +135,7 @@ def _legacy_scan_once(
                 )
                 anomaly_settings = settings.anomaly_settings
                 response = page.goto(
-                    _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by),
+                    _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by, row),
                     wait_until="domcontentloaded",
                     timeout=30000,
                 )
@@ -475,7 +475,7 @@ def _scan_item_once(
     shallow_target = max(4, min(scan_optimization.shallow_target_listings, effective_target))
 
     response = page.goto(
-        _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by),
+        _sorted_market_url(target.steam_market_url, anomaly_settings.sample.sort_by, row),
         wait_until="domcontentloaded",
         timeout=30000,
     )
@@ -796,21 +796,23 @@ def _should_save_candidate(candidate: Candidate, anomaly_settings: Any) -> bool:
     return candidate.recommendation_level != "skip" or anomaly_settings.debug.save_skip_candidates
 
 
-def _sorted_market_url(url: str, sort_by: str) -> str:
-    if sort_by != "price_asc":
-        return url
+def _sorted_market_url(url: str, sort_by: str, item: dict[str, Any] | None = None) -> str:
     parsed = urllib.parse.urlsplit(url)
     params = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
-    params.update({"sort_column": "price", "sort_dir": "asc"})
+    if item:
+        params.update(steam_market_filter_params(item))
+    if sort_by == "price_asc":
+        params.update({"sort_column": "price", "sort_dir": "asc"})
     params.setdefault("start", "0")
     params.setdefault("l", "english")
+    fragment = "p1_price_asc" if sort_by == "price_asc" else parsed.fragment
     return urllib.parse.urlunsplit(
         (
             parsed.scheme,
             parsed.netloc,
             parsed.path,
             urllib.parse.urlencode(params),
-            "p1_price_asc",
+            fragment,
         )
     )
 

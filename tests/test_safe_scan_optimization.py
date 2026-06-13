@@ -94,6 +94,23 @@ def test_scan_queue_respects_item_and_collection_cooldowns(tmp_path):
     assert selected.skipped_by_collection_cooldown_count == 3
 
 
+def test_scan_queue_respects_last_scanned_at_for_failed_scans(tmp_path):
+    repo = _repo_with_items(tmp_path, count=2)
+    recent = (utc_now() - timedelta(minutes=5)).replace(microsecond=0).isoformat()
+    repo.save_item(ItemDefinition(id="i0", collection_id="c1", market_hash_name="Skin 0", last_scanned_at=recent))
+    settings = repo.get_settings()
+    queue = settings.scan_queue_settings
+    queue.item_cooldown_seconds = 1800
+    queue.collection_cooldown_seconds = 0
+    queue.random_jitter = False
+    settings.set_scan_queue_settings(queue)
+
+    selected = repo.select_scan_targets(settings)
+
+    assert "i0" not in [row["id"] for row in selected.targets]
+    assert selected.skipped_by_item_cooldown_count == 1
+
+
 def test_scan_queue_item_id_bypasses_queue(tmp_path):
     repo = _repo_with_items(tmp_path, count=2)
     recent = utc_now_iso()
@@ -211,7 +228,10 @@ def test_item_failure_does_not_inactivate_old_listings(tmp_path):
     repo.save_item_scan_failure(run_id, "i0", {"status": "failed", "error": "boom"})
 
     rows = repo.list_market_listings(item_id="i0", active_only=True, limit=10)
+    item = repo.get_item("i0")
     assert [row["id"] for row in rows] == ["old"]
+    assert item["last_parsed_at"] == now
+    assert item["last_scanned_at"]
 
 
 def test_item_success_inactivates_old_listings_and_saves_new_batch(tmp_path):
